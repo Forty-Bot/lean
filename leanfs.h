@@ -3,15 +3,21 @@
 
 #include <stdint.h>
 
+#define LEAN_VERSION 0x0006 /* 0.6 */
+
+#define MAGIC_SUPERBLOCK 0x4E41454C /* LEAN */
+#define MAGIC_INDIRECT 0x58444E49 /* INDX */ 
+#define MAGIC_INODE 0x45444F4E /* NODE */
+
 /*
  * Structure containing fundamental information about a LEAN volume.
  */
 struct superblock {
 	uint32_t checksum;
-	uint32_t magic; /* Must be 0x4E41454C or 'LEAN' */
-	uint16_t fs_version; /* Should be 0x0006; other versions unsupported */
+	uint32_t magic; /* Must be MAGIC_SUPERBLOCK */
+	uint16_t fs_version; /* Should be LEAN_VERSION; others unsupported */
 	uint8_t prealloc_count; /* Extra sectors to allocate minus one */
-	uint8_t sectors_per_band; /* log2 */
+	uint8_t log2_sectors_per_band;
 	uint32_t state; /* Bit 0 is clean unmount. Bit 1 is error */
 	uint8_t uuid[16];
 	uint8_t volume_label[64]; /* UTF-8 name of volume */
@@ -35,7 +41,7 @@ struct superblock {
  */
 struct indirect {
 	uint32_t checksum;
-	uint32_t magic; /* Must be 0x58444E49 or 'INDX' */
+	uint32_t magic; /* Must be MAGIC_INDIRECT */
 	uint64_t sector_count; /* Total amount of sectors in this index */
 	uint64_t inode; /* Inode this indirect belongs to */
 	uint64_t sector; /* The sector this indirect is in */
@@ -59,7 +65,7 @@ struct indirect {
  */
 struct inode {
 	uint32_t checksum;
-	uint32_t magic; /* Must be 0x45444F4E or 'NODE' */
+	uint32_t magic; /* Must be MAGIC_INODE */
 	uint8_t extent_count; /* Number of extents in this inode */
 	uint8_t reserved[3];
 	uint32_t indirect_count; /* Number of owned indirects */
@@ -143,6 +149,6 @@ enum file_type {
 	FT_REG = IA_FMT_REG >> 29,
 	FT_DIR = IA_FMT_DIR >> 29,
 	FT_SYM = IA_FMT_SYM >> 29
-}
+};
 
 #endif // LEANFS_H
