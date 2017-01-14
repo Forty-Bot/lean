@@ -74,14 +74,10 @@ void set_sec(uint8_t *bm, uint64_t sec)
 
 /*
  * Generate a bitmap for a new filesystem and write it to disk
- * The sector of the backup superblock will be written to super_backup
- * The sector of the band 0 bitmap will be written to band_zero
- * The first sector after the band 0 bitmap will be written to first_sector
+ * Fills in the sectors_free, super_backup, bitmap_start, and root fields of sb 
  * returns 0 on success
  */
-uint64_t generate_bm(int fd, uint8_t sb_offset, uint8_t prealloc, \
-	uint8_t log2_band_sec, uint64_t sec, uint64_t *super_backup, \
-	uint64_t *band_zero, uint64_t *first_sector)
+uint64_t generate_bm(int fd, struct superblock *sb)
 {
 	size_t bm_size; /* Size of the band bitmap size */
 	uint8_t *bm; /* Bitmap of bands 1 to bands */
@@ -91,9 +87,9 @@ uint64_t generate_bm(int fd, uint8_t sb_offset, uint8_t prealloc, \
 	uint64_t band_bm_sec; /* Number of sectors to hold a band's bitmap */
 	uint64_t zero_sec; /* Number of used sectors in band zero */
 	
-	band_sec = 1 << log2_band_sec;
+	band_sec = 1 << sb->log2_band_sectors;
 	band_bm_sec = band_sec >> 12;
-	bands = 1 + (sec - 1) / band_sec;
+	bands = 1 + (sb->sectors_total - 1) / band_sec;
 	
 	bm_size = band_sec / 8;
 	bm = malloc(bm_size);
@@ -102,13 +98,17 @@ uint64_t generate_bm(int fd, uint8_t sb_offset, uint8_t prealloc, \
 	memset(bm, 0, bm_size);
 
 	/* Write the band 0 bitmap */
-	*band_zero = sb_offset + 1;
-	*first_sector = *band_zero + band_bm_sec;
-	zero_sec = *band_zero + band_bm_sec + prealloc;
+	sb->bitmap_start = sb->root + 1;
+	sb->root = sb->bitmap_start + band_bm_sec;
+	/* We should subtract 1 here. but it's added back in because
+	 * block numbers start at 0 */
+	zero_sec = sb->root + sb->prealloc;
 	fill_bitmap(bm, zero_sec);
-	*super_backup = ((sec < band_sec) ? sec : band_sec) - 1;
-	set_sec(bm, *super_backup);
-	if(write_at_sector(fd, *band_zero, bm, bm_size))
+	sb->sectors_free = zero_sec + (bands - 1) * band_bm_sec;
+	sb->super_backup = ((sb->sectors_total < band_sec) ? \
+		sb->sectors_total : band_sec) - 1;
+	set_sec(bm, sb->super_backup);
+	if(write_at_sector(fd, sb->bitmap_start, bm, bm_size))
 		error(-1, errno, "Unable to write band zero bitmap");
 
 	/* Because all band bitmaps (except band 0's) are identical,
@@ -151,11 +151,8 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
 	strncpy(sb->volume_label, volume_label, 63);
 	sb->volume_label[63] = '\0';
 	sb->sectors_total = sec;
-	/* In use: Offset, Superblock, Backup, Bitmap table, Root dir */
-	sb->sectors_free = sec - (sb_offset + 2 + prealloc + (sec >> 12));
 	sb->super_primary = sb_offset;
-	if(generate_bm(fd, sb_offset, prealloc, log2_band_sec, sec, \
-		&sb->super_backup, &sb->bitmap_start, &sb->root))
+	if(generate_bm(fd, sb))
 		error(-1, 0, "Could not write bitmap to disk");
 	sb->checksum = checksum(sb, sizeof(*sb));
 	
