@@ -242,7 +242,7 @@ int parse_long(const char* str, long* n)
 }
 
 const char help_msg[] = 
-"Usage: mkfs.lean [ -b sectors-per-band | -f superblock-offset | -L volume-label | -p preallocated-sectors | -U UUID | -h ] device\n";
+"Usage: mkfs.lean [ -b sectors-per-band | -f superblock-offset | -n volume-label | -p preallocated-sectors | -U UUID | -h ] device\n";
 
 int main(int argc, char **argv)
 {
@@ -262,7 +262,7 @@ int main(int argc, char **argv)
 	
 	uuid_clear(uuid);
 
-	while ((c = getopt(argc, argv, "b:f:hL:p:U:")) != -1) {
+	while ((c = getopt(argc, argv, "b:f:hn:p:U:")) != -1) {
 		switch (c) {
 		case 'b':
 			if (parse_long(optarg, &band_sec))
@@ -280,7 +280,7 @@ int main(int argc, char **argv)
 		case 'h':
 			printf(help_msg);
 			return 0;
-		case 'L':
+		case 'n':
 			strncpy(volume_name, optarg, 63);
 			volume_name[63] = '\0';
 			break;
@@ -345,7 +345,7 @@ int main(int argc, char **argv)
 		"Sectors per band:     %ld\n"
 		"Preallocated sectors: %ld\n"
 		"UUID:                 %s\n"
-		"Volume label:         \"%s\"\n", \
+		"Volume label:         %s\n", \
 		device, size, sectors, sb_offset, band_sec, \
 		prealloc, uuid_string, volume_name);
 
