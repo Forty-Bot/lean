@@ -2,6 +2,7 @@
 #define LEANFS_H
 
 #include <stdint.h>
+#include <stdlib.h>
 
 #define LEAN_VERSION 0x0006 /* 0.6 */
 
@@ -16,8 +17,8 @@ struct superblock {
 	uint32_t checksum;
 	uint32_t magic; /* Must be MAGIC_SUPERBLOCK */
 	uint16_t fs_version; /* Should be LEAN_VERSION; others unsupported */
-	uint8_t prealloc_count; /* Extra sectors to allocate minus one */
-	uint8_t log2_sectors_per_band;
+	uint8_t prealloc; /* Extra sectors to allocate minus one */
+	uint8_t log2_band_sectors; /* Number of sectors stored in each band */
 	uint32_t state; /* Bit 0 is clean unmount. Bit 1 is error */
 	uint8_t uuid[16];
 	uint8_t volume_label[64]; /* UTF-8 name of volume */
@@ -120,11 +121,11 @@ enum inode_attr {
 	IA_PREALLOC = 1 << 18,
 	IA_INLINE = 1 << 19, /* Inline extended attributes in first sector */
 	/* Filetype attributes */
-	IA_FMT_MASK = 7 << 29, /* Mask of file type */
+	IA_FMT_MASK = (int) (7u << 29), /* Mask of file type */
 	IA_FMT_REG = 1 << 29, /* Regular file */
 	IA_FMT_DIR = 2 << 29, /* Directory */
 	IA_FMT_SYM = 3 << 29, /* Symbolic link */
-	IA_FMT_FORK = 4 << 29 /* Fork */
+	IA_FMT_FORK = (int) (4u << 29) /* Fork */
 };
 
 /* 
@@ -150,5 +151,8 @@ enum file_type {
 	FT_DIR = IA_FMT_DIR >> 29,
 	FT_SYM = IA_FMT_SYM >> 29
 };
+
+/* leanfs.c */
+uint32_t checksum(const void* data, size_t size);
 
 #endif // LEANFS_H
