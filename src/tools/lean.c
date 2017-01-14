@@ -1,4 +1,4 @@
-#include "leanfs.h"
+#include "lean.h"
 
 #include <assert.h>
 #include <stdlib.h>
