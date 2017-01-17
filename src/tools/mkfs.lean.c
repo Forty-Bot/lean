@@ -77,7 +77,7 @@ void set_sec(uint8_t *bm, uint64_t sec)
  * Fills in the sectors_free, super_backup, bitmap_start, and root fields of sb 
  * returns 0 on success
  */
-uint64_t generate_bm(int fd, struct superblock *sb)
+uint64_t generate_bm(int fd, struct lean_superblock *sb)
 {
 	size_t bm_size; /* Size of the band bitmap size */
 	uint8_t *bm; /* Bitmap of bands 1 to bands */
@@ -132,9 +132,9 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
 	const uint8_t *volume_label, uint64_t sec)
 {
 	size_t data_size; /* Root directory data size */
-	struct dir_entry *data; /* Root directory data */
-	struct inode *root; /* The root directory */
-	struct superblock *sb; /* The superblock */
+	struct lean_dir_entry *data; /* Root directory data */
+	struct lean_inode *root; /* The root directory */
+	struct lean_superblock *sb; /* The superblock */
 	struct timespec ts; /* Timespec returned by clock_gettime */
 	int64_t time; /* Current time in microseconds */
 	
@@ -143,8 +143,8 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
 		error(-1, errno, "Could not allocate memory for superblock");
 	memset(sb, 0, sizeof(*sb));
 
-	sb->magic = MAGIC_SUPERBLOCK;
-	sb->fs_version = LEAN_VERSION;
+	memcpy(sb->magic, &LEAN_MAGIC_SUPERBLOCK, sizeof(LEAN_MAGIC_SUPERBLOCK));
+	memcpy(sb->fs_version, &LEAN_VERSION, sizeof(LEAN_VERSION));
 	sb->prealloc = prealloc - 1;
 	sb->log2_band_sectors = log2_band_sec;
 	memcpy(sb->uuid, uuid, 16);
@@ -154,40 +154,40 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
 	sb->super_primary = sb_offset;
 	if(generate_bm(fd, sb))
 		error(-1, 0, "Could not write bitmap to disk");
-	sb->checksum = checksum(sb, sizeof(*sb));
+	sb->checksum = lean_checksum(sb, sizeof(*sb));
 	
 	data_size = 2 * sizeof(*data);
 	root = malloc(sizeof(*root) + data_size);
 	if(!root)
 		error(-1, errno, "Could not allocate memory for root inode");
-	data = (struct dir_entry *) (&root[1]);
+	data = (struct lean_dir_entry *) (&root[1]);
 	memset(root, 0, sizeof(*root) + data_size);
 
-	root->magic = MAGIC_INODE;
+	memcpy(root->magic, &LEAN_MAGIC_INODE, sizeof(LEAN_MAGIC_INODE));
 	root->extent_count = 1;
 	root->link_count = 1;
 	root->uid = getuid();
 	root->gid = getgid();
-	root->attr = IA_RUSR | IA_WUSR | IA_XUSR | IA_PREALLOC | IA_FMT_DIR;
+	root->attr = LIA_RUSR | LIA_WUSR | LIA_XUSR | LIA_PREALLOC | LIA_FMT_DIR;
 	root->size = data_size;
 	root->sector_count = prealloc;
 	clock_gettime(CLOCK_REALTIME, &ts);
-	time = (ts.tv_sec * 1000) + (ts.tv_nsec / 1000);
+	time = (ts.tv_sec * 1000000L) + (ts.tv_nsec / 1000);
 	root->time_access = time;
 	root->time_status = time;
 	root->time_modify = time;
 	root->time_create = time;
 	root->extent_starts[0] = sb->root;
 	root->extent_sizes[0] = prealloc;
-	root->checksum = checksum(root, sizeof(*root));
+	root->checksum = lean_checksum(root, sizeof(*root));
 
 	data[0].inode = sb->root;
-	data[0].type = FT_DIR;
+	data[0].type = LFT_DIR;
 	data[0].entry_length = 1;
 	data[0].name_length = 1;
 	data[0].name[0] = '.';
 	data[1].inode = sb->root;
-	data[1].type = FT_DIR;
+	data[1].type = LFT_DIR;
 	data[1].entry_length = 1;
 	data[1].name_length = 2;
 	data[1].name[0] = '.';

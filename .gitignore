@@ -1,4 +1,6 @@
 *.swp
 *.img
 *.o
+*.ko
+*.cmd
 .depend
