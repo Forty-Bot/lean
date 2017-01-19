@@ -3,12 +3,20 @@
 
 #ifdef __KERNEL__
 #include <linux/types.h>
+#define le16 __le16
+#define le32 __le32
+#define le64 __le64
+#define 
 #else // __KERNEL__
 #include <stdint.h>
 #include <stdlib.h>
+#define le16 uint16_t
+#define le32 uint32_t
+#define le64 uint64_t
 #endif // __KERNEL__
 
-static const uint8_t LEAN_VERSION[] = { 0x00, 0x06 }; /* 0.6 */
+#define LEAN_VERSION_MAJOR 0x00
+#define LEAN_VERSION_MINOR 0x06
 
 static const uint8_t LEAN_MAGIC_SUPERBLOCK[] = { 'L', 'E', 'A', 'N' };
 static const uint8_t LEAN_MAGIC_INDIRECT[] = { 'I', 'N', 'D', 'X' };
@@ -18,14 +26,33 @@ static const uint8_t LEAN_MAGIC_INODE[] = { 'N', 'O', 'D', 'E' };
  * Structure containing fundamental information about a LEAN volume.
  */
 struct lean_superblock {
-	uint32_t checksum;
+	le32 checksum;
 	uint8_t magic[4]; /* Must be LEAN_MAGIC_SUPERBLOCK */
-	uint8_t fs_version[2]; /* Should be LEAN_VERSION; others unsupported */
+	uint8_t fs_version_major; /* Should be LEAN_VERSION; others unsupported */
+	uint8_t fs_version_minor;
 	uint8_t prealloc; /* Extra sectors to allocate minus one */
 	uint8_t log2_band_sectors; /* Number of sectors stored in each band */
-	uint32_t state; /* Bit 0 is clean unmount. Bit 1 is error */
+	le32 state; /* Bit 0 is clean unmount. Bit 1 is error */
 	uint8_t uuid[16];
 	uint8_t volume_label[64]; /* UTF-8 name of volume */
+	le64 sectors_total;
+	le64 sectors_free;
+	le64 super_primary;
+	le64 super_backup;
+	le64 bitmap_start; /* Sector of the first band's bitmap */
+	le64 root; /* Inode of the root dir */
+	le64 bad; /* Inode of a file consisting of bad sectors */
+	uint8_t reserved[360];
+} __attribute__((packed));
+
+/*
+ * Superblock info in memory
+ */
+struct lean_sb_info { 
+	uint8_t prealloc; /* Extra sectors to allocate */
+	uint8_t log2_band_sectors;
+	uint8_t uuid[16];
+	uint8_t volume_label[64];
 	uint64_t sectors_total;
 	uint64_t sectors_free;
 	uint64_t super_primary;
@@ -33,13 +60,14 @@ struct lean_superblock {
 	uint64_t bitmap_start; /* Sector of the first band's bitmap */
 	uint64_t root; /* Inode of the root dir */
 	uint64_t bad; /* Inode of a file consisting of bad sectors */
-	uint8_t reserved[360];
-} __attribute__((packed));
+	uint64_t band_sectors;
+	struct lean_superblock *sb;
+};
 
 /* 
  * Number of extents in an indirect
  */
-#define INDIRECT_EXTENTS 38
+#define LEAN_INDIRECT_EXTENTS 38
 
 /*
  * Structure containing additional extents of a file
@@ -55,24 +83,47 @@ struct lean_indirect {
 	uint8_t extent_count; /* Total extents in this indirect */
 	uint8_t reserved[7];
 	/* Extents are split into two arrays for alignment */
-	uint64_t extent_starts[INDIRECT_EXTENTS];
-	uint32_t extent_sizes[INDIRECT_EXTENTS];
+	uint64_t extent_starts[LEAN_INDIRECT_EXTENTS];
+	uint32_t extent_sizes[LEAN_INDIRECT_EXTENTS];
 } __attribute__((packed));
 
 /*
  * Number of extents in an inode
  */
-#define INODE_EXTENTS 6
+#define LEAN_INODE_EXTENTS 6
 
 /*
  * Structure containing fundamental metadata of a file.
  * Resides in the first sector of the file, immediately before the data.
  */
 struct lean_inode {
-	uint32_t checksum;
+	le32 checksum;
 	uint8_t magic[4]; /* Must be LEAN_MAGIC_INODE */
 	uint8_t extent_count; /* Number of extents in this inode */
 	uint8_t reserved[3];
+	le32 indirect_count; /* Number of owned indirects */
+	le32 link_count; /* Number of references to this file */
+	le32 uid; /* User id of the owner */
+	le32 gid; /* Group id of the owner */
+	le32 attr; /* Attributes mask of the file; see: enum inode_attr */
+	le64 size; /* Size of the data in bytes, not including metadata */
+	le64 sector_count; /* Number of data sectors allocated */
+	le64 time_access; /* Unix time of last access */
+	le64 time_status; /* Unix time of last status change */
+	le64 time_modify; /* Unix time of last modification */
+	le64 time_create; /* Unix time of creation */
+	le64 indirect_first;
+	le64 indirect_last;
+	le64 fork; /* Inode of fork, if existing */
+	le64 extent_starts[LEAN_INODE_EXTENTS];
+	le32 extent_sizes[LEAN_INODE_EXTENTS];
+} __attribute__((packed));
+
+/*
+ * Inode info in memory
+ */
+struct lean_ino_info {
+	uint8_t extent_count; /* Number of extents in this inode */
 	uint32_t indirect_count; /* Number of owned indirects */
 	uint32_t link_count; /* Number of references to this file */
 	uint32_t uid; /* User id of the owner */
@@ -87,9 +138,9 @@ struct lean_inode {
 	uint64_t indirect_first;
 	uint64_t indirect_last;
 	uint64_t fork; /* Inode of fork, if existing */
-	uint64_t extent_starts[INODE_EXTENTS];
-	uint32_t extent_sizes[INODE_EXTENTS];
-} __attribute__((packed));
+	uint64_t extent_starts[LEAN_INODE_EXTENTS];
+	uint32_t extent_sizes[LEAN_INODE_EXTENTS];
+};
 
 /*
  * Enum containing all attributes of an inode
@@ -138,12 +189,19 @@ enum lean_inode_attr {
  * However, the structure must be aligned to 16 bytes
  */
 struct lean_dir_entry {
-	uint64_t inode;
+	le64 inode;
 	uint8_t type; /* Type of the file, see: enum file_type */
 	uint8_t entry_length; /* Length of the entry in 16-byte chunks */
-	uint16_t name_length; /* Length of the name; may be other than 4 */
+	le16 name_length; /* Length of the name; may be other than 4 */
 	uint8_t name[4]; /* May be larger or smaller than 4 */
 } __attribute__((packed));
+
+struct lean_dentry_info {
+	uint64_t inode;
+	uint8_t type; /* Type of the file, see: enum file_type */
+	uint16_t name_length; /* Length of the name */
+	uint8_t *name;
+};
 
 /* 
  * File type used in dir_entry
@@ -157,6 +215,15 @@ enum lean_file_type {
 };
 
 /* leanfs.c */
+#define WRONG_CHECKSUM 1
 uint32_t lean_checksum(const void* data, size_t size);
+int lean_superblock_to_info(const struct lean_superblock *sb, \
+	struct lean_sb_info *sbi);
+void lean_info_to_superblock(const struct lean_sb_info *sbi, \
+	struct lean_superblock *sb);
+int lean_inode_to_info(const struct lean_inode *li, \
+	struct lean_ino_info *ii);
+void lean_info_to_inode(const struct lean_ino_info *ii, \
+	struct lean_inode *li);
 
 #endif // LEANFS_H

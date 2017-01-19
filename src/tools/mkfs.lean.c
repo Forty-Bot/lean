@@ -1,5 +1,6 @@
 #include "lean.h"
 
+#include <endian.h>
 #include <errno.h>
 #include <error.h>
 #include <fcntl.h>
@@ -28,7 +29,8 @@ int write_at_sector(int fd, uint64_t sec, const void *buf, size_t n)
 		ret = -1;
 		goto end;
 	}
-	while((wr = write(fd, buf, n))) {
+	while(n > 0) {
+		wr = write(fd, buf, n);
 		if(wr < 0) {
 			err_save = errno;
 			ret = -1;
@@ -38,7 +40,7 @@ int write_at_sector(int fd, uint64_t sec, const void *buf, size_t n)
 			goto end;
 		}
 		n -= wr;
-		buf += wr;
+		buf += wr;	
 	}
 end:
 	if(fsync(fd)) {
@@ -77,7 +79,7 @@ void set_sec(uint8_t *bm, uint64_t sec)
  * Fills in the sectors_free, super_backup, bitmap_start, and root fields of sb 
  * returns 0 on success
  */
-uint64_t generate_bm(int fd, struct lean_superblock *sb)
+uint64_t generate_bm(int fd, struct lean_sb_info *sb)
 {
 	size_t bm_size; /* Size of the band bitmap size */
 	uint8_t *bm; /* Bitmap of bands 1 to bands */
@@ -98,13 +100,14 @@ uint64_t generate_bm(int fd, struct lean_superblock *sb)
 	memset(bm, 0, bm_size);
 
 	/* Write the band 0 bitmap */
-	sb->bitmap_start = sb->root + 1;
+	sb->bitmap_start = sb->super_primary + 1;
 	sb->root = sb->bitmap_start + band_bm_sec;
 	/* We should subtract 1 here. but it's added back in because
 	 * block numbers start at 0 */
 	zero_sec = sb->root + sb->prealloc;
 	fill_bitmap(bm, zero_sec);
-	sb->sectors_free = zero_sec + (bands - 1) * band_bm_sec;
+	sb->sectors_free = sb->sectors_total - \
+		(zero_sec + (bands - 1) * band_bm_sec);
 	sb->super_backup = ((sb->sectors_total < band_sec) ? \
 		sb->sectors_total : band_sec) - 1;
 	set_sec(bm, sb->super_backup);
@@ -133,37 +136,37 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
 {
 	size_t data_size; /* Root directory data size */
 	struct lean_dir_entry *data; /* Root directory data */
-	struct lean_inode *root; /* The root directory */
+	struct lean_ino_info *root; /* The root directory */
+	struct lean_inode *root_ino;
 	struct lean_superblock *sb; /* The superblock */
+	struct lean_sb_info *sbi;
 	struct timespec ts; /* Timespec returned by clock_gettime */
 	int64_t time; /* Current time in microseconds */
 	
+	sbi = malloc(sizeof(*sbi));
 	sb = malloc(sizeof(*sb));
-	if(!sb)
+	if(!sbi || !sb)
 		error(-1, errno, "Could not allocate memory for superblock");
-	memset(sb, 0, sizeof(*sb));
+	memset(sbi, 0, sizeof(*sbi));
 
-	memcpy(sb->magic, &LEAN_MAGIC_SUPERBLOCK, sizeof(LEAN_MAGIC_SUPERBLOCK));
-	memcpy(sb->fs_version, &LEAN_VERSION, sizeof(LEAN_VERSION));
-	sb->prealloc = prealloc - 1;
-	sb->log2_band_sectors = log2_band_sec;
-	memcpy(sb->uuid, uuid, 16);
-	strncpy(sb->volume_label, volume_label, 63);
-	sb->volume_label[63] = '\0';
-	sb->sectors_total = sec;
-	sb->super_primary = sb_offset;
-	if(generate_bm(fd, sb))
+	sbi->prealloc = prealloc;
+	sbi->log2_band_sectors = log2_band_sec;
+	memcpy(sbi->uuid, uuid, 16);
+	strncpy(sbi->volume_label, volume_label, 63);
+	sbi->volume_label[63] = '\0';
+	sbi->sectors_total = sec;
+	sbi->super_primary = sb_offset;
+	if(generate_bm(fd, sbi))
 		error(-1, 0, "Could not write bitmap to disk");
-	sb->checksum = lean_checksum(sb, sizeof(*sb));
 	
 	data_size = 2 * sizeof(*data);
-	root = malloc(sizeof(*root) + data_size);
-	if(!root)
+	root = malloc(sizeof(*root));
+	root_ino = malloc(sizeof(*root_ino) + data_size);
+	if(!root || !root_ino)
 		error(-1, errno, "Could not allocate memory for root inode");
-	data = (struct lean_dir_entry *) (&root[1]);
-	memset(root, 0, sizeof(*root) + data_size);
+	data = (struct lean_dir_entry *) (&root_ino[1]);
+	memset(root_ino, 0, sizeof(*root_ino) + data_size);
 
-	memcpy(root->magic, &LEAN_MAGIC_INODE, sizeof(LEAN_MAGIC_INODE));
 	root->extent_count = 1;
 	root->link_count = 1;
 	root->uid = getuid();
@@ -177,25 +180,30 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
 	root->time_status = time;
 	root->time_modify = time;
 	root->time_create = time;
-	root->extent_starts[0] = sb->root;
+	root->extent_starts[0] = sbi->root;
 	root->extent_sizes[0] = prealloc;
-	root->checksum = lean_checksum(root, sizeof(*root));
 
-	data[0].inode = sb->root;
+	data[0].inode = htole64(sbi->root);
 	data[0].type = LFT_DIR;
 	data[0].entry_length = 1;
-	data[0].name_length = 1;
+	data[0].name_length = htole16(1);
 	data[0].name[0] = '.';
-	data[1].inode = sb->root;
+	data[1].inode = htole64(sbi->root);
 	data[1].type = LFT_DIR;
 	data[1].entry_length = 1;
-	data[1].name_length = 2;
+	data[1].name_length = htole16(2);
 	data[1].name[0] = '.';
 	data[1].name[1] = '.';
 
-	write_at_sector(fd, sb->root, root, sizeof(*root) + data_size);
-	write_at_sector(fd, sb->super_primary, sb, sizeof(*sb));
-	write_at_sector(fd, sb->super_backup, sb, sizeof(*sb));
+	
+	lean_info_to_inode(root, root_ino);
+	write_at_sector(fd, sbi->root, root_ino, sizeof(*root) + data_size);
+	
+	/* Set the mount bit */
+	sb->state = htole32(1);
+	lean_info_to_superblock(sbi, sb);
+	write_at_sector(fd, sbi->super_primary, sb, sizeof(*sb));
+	write_at_sector(fd, sbi->super_backup, sb, sizeof(*sb));
 
 	return 0;
 }
