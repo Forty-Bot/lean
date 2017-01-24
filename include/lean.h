@@ -1,19 +1,26 @@
 #ifndef LEANFS_H
 #define LEANFS_H
 
+/* Initialize some equivalent types so we can use this include in both user and
+ * kernel space */
 #ifdef __KERNEL__
 #include <linux/types.h>
+#include <linux/fs.h>
 #define le16 __le16
 #define le32 __le32
 #define le64 __le64
-#define 
-#else // __KERNEL__
+#define BH struct buffer_head
+#define IN struct inode
+#else /* __KERNEL__ */
 #include <stdint.h>
 #include <stdlib.h>
+#include <unistd.h>
 #define le16 uint16_t
 #define le32 uint32_t
 #define le64 uint64_t
-#endif // __KERNEL__
+#define BH void
+#define IN void *
+#endif /* __KERNEL__ */
 
 #define LEAN_VERSION_MAJOR 0x00
 #define LEAN_VERSION_MINOR 0x06
@@ -61,7 +68,7 @@ struct lean_sb_info {
 	uint64_t root; /* Inode of the root dir */
 	uint64_t bad; /* Inode of a file consisting of bad sectors */
 	uint64_t band_sectors;
-	struct lean_superblock *sb;
+	BH *sbh;
 };
 
 /* 
@@ -121,13 +128,14 @@ struct lean_inode {
 
 /*
  * Inode info in memory
+ * TODO: reduce to smallest necessary info for driver
  */
 struct lean_ino_info {
 	uint8_t extent_count; /* Number of extents in this inode */
 	uint32_t indirect_count; /* Number of owned indirects */
 	uint32_t link_count; /* Number of references to this file */
-	uint32_t uid; /* User id of the owner */
-	uint32_t gid; /* Group id of the owner */
+	uid_t uid; /* User id of the owner */
+	gid_t gid; /* Group id of the owner */
 	uint32_t attr; /* Attributes mask of the file; see: enum inode_attr */
 	uint64_t size; /* Size of the data in bytes, not including metadata */
 	uint64_t sector_count; /* Number of data sectors allocated */
@@ -140,7 +148,18 @@ struct lean_ino_info {
 	uint64_t fork; /* Inode of fork, if existing */
 	uint64_t extent_starts[LEAN_INODE_EXTENTS];
 	uint32_t extent_sizes[LEAN_INODE_EXTENTS];
+	IN vfs_inode;
 };
+
+#ifdef __KERNEL__
+/*
+ * Extract a struct lean_ino_info from a struct inode
+ */
+static inline struct lean_ino_info *LEAN_I(struct inode *inode)
+{
+	return list_entry(inode, struct lean_ino_info, vfs_inode);
+}
+#endif /* __KERNEL__ */
 
 /*
  * Enum containing all attributes of an inode
@@ -165,6 +184,7 @@ enum lean_inode_attr {
 	LIA_SUID = 1 << 11, /* Execute as user id */
 	LIA_SGID = 1 << 10, /* Execute as group id */
 	LIA_SVTX = 1 << 9, /* Restrict rename/delete to owner */
+	LIA_POSIX_MASK = (1 << 12) - 1, /* Mask of posix attributes */
 	/* Filesystem-specific attributes */
 	LIA_HIDDEN = 1 << 12, /* Do not show in default directory listings */
 	LIA_SYSTEM = 1 << 13, /* Warn that this is a system file */

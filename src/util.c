@@ -5,7 +5,7 @@
 #ifdef __KERNEL__
 #include <linux/bug.h>
 #include <linux/kernel.h>
-#define lean_assert WARN_ON
+#define lean_assert(x) WARN_ON(!(x))
 #define tole16 cpu_to_le16
 #define tole32 cpu_to_le32
 #define tole64 cpu_to_le64
