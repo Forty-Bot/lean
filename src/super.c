@@ -95,7 +95,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 		if (!bh) {
 			pr_err("lean: Unable to read sector %d on dev %s\n", \
 				sec, s->s_id);
-			ret -EIO;
+			ret = -EIO;
 			goto failure;
 		} else {
 			sb = (struct lean_superblock *) bh->b_data;
@@ -106,6 +106,8 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 				brelse(bh);
 		}
 	}
+	/* Reverse previous increment */
+	sec--;
 	if (!found_sb) {
 		pr_err("lean: Can't find a lean fs on dev %s\n", s->s_id);
 		goto failure;
@@ -148,9 +150,21 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	s->s_flags |= MS_RDONLY;
 	s->s_time_gran = 1000;
 	
-	root = lean_inode_get(s, sbi->root);
+	root = lean_iget(s, sbi->root);
 	if(IS_ERR(root)) {
 		ret = PTR_ERR(root);
+		goto bh_failure;
+	}
+	if(!S_ISDIR(root->i_mode) || !root->i_blocks || !root->i_size) {
+		pr_err("lean: corrupt root inode\n");
+		iput(root);
+		goto bh_failure;
+	}
+
+	s->s_root = d_make_root(root);
+	if(!s->s_root) {
+		pr_err("lean: get root inode failed\n");
+		ret = -ENOMEM;
 		goto bh_failure;
 	}
 

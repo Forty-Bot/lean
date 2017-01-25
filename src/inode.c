@@ -5,7 +5,7 @@
 #include <linux/err.h>
 #include <linux/fs.h>
 
-struct inode *lean_inode_get(struct super_block *s, uint64_t ino)
+struct inode *lean_iget(struct super_block *s, uint64_t ino)
 {
 	int ret = -EIO;
 	struct buffer_head *bh;

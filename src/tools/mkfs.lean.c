@@ -121,7 +121,7 @@ uint64_t generate_bm(int fd, struct lean_sb_info *sb)
 
 	for(i = 1; i < bands; i++) {
 		if(write_at_sector(fd, i * band_sec, bm, bm_size))
-			error(-1, errno, "Unable to write band %ld bitmap", i);
+			error(-1, errno, "Unable to write band %lu bitmap", i);
 	}
 	return 0;
 }
@@ -324,7 +324,7 @@ int main(int argc, char **argv)
 	size = lseek(fd, 0L, SEEK_END);
 	/* We need at least 4k to fit everything in */
 	if(!(size >> 12))
-		error(-1, 0, "%s is too small! (only %ld bytes)", device, size);
+		error(-1, 0, "%s is too small! (only %lu bytes)", device, size);
 	
 	/* Round size to the nearest multiple of 512 */
 	sectors = size >> 9;
@@ -337,7 +337,7 @@ int main(int argc, char **argv)
 	if(new_band_sec < 4096)
 		new_band_sec = 4096;
 	if(new_band_sec != band_sec) {
-		printf("Using %ld sectors per band instead of %ld because only one band is needed\n", \
+		printf("Using %lu sectors per band instead of %lu because only one band is needed\n", \
 			new_band_sec, band_sec);
 		band_sec = new_band_sec;
 	}
@@ -347,11 +347,11 @@ int main(int argc, char **argv)
 	uuid_unparse(uuid, uuid_string);
 	
 	printf("Formatting %s with the following options:\n"
-		"Size:                 %ld\n"
-		"Sectors:              %ld\n"
-		"Superblock offset:    %ld\n"
-		"Sectors per band:     %ld\n"
-		"Preallocated sectors: %ld\n"
+		"Size:                 %lu\n"
+		"Sectors:              %lu\n"
+		"Superblock offset:    %lu\n"
+		"Sectors per band:     %lu\n"
+		"Preallocated sectors: %lu\n"
 		"UUID:                 %s\n"
 		"Volume label:         %s\n", \
 		device, size, sectors, sb_offset, band_sec, \
