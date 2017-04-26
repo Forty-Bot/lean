@@ -85,7 +85,8 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	}
 
 	if(!sb_set_blocksize(s, 512)) {
-		pr_err("Cannot set block size of dev %s to 512\n", s->s_id);
+		pr_err("lean: cannot set block size of dev %s to 512\n",
+			s->s_id);
 		goto failure;
 	}
 	

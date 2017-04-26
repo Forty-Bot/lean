@@ -16,10 +16,6 @@ mkfs.lean: $(OBJS)
 %.o: %.c
 	$(CC) $(CFLAGS) -MMD -c -o $@ $<
 
-#%.d: %.c
-#	$(RM) $@
-#	$(CC) $(CFLAGS) -MM $^ -MF $@
-
 .PHONY: clean
 clean:
 	$(RM) $(OBJS) $(DEPS) mkfs.lean

@@ -128,7 +128,7 @@ int lean_inode_to_info(const struct lean_inode *li, \
 	ii->indirect_first = tocpu64(li->indirect_first);
 	ii->indirect_last = tocpu64(li->indirect_last);
 	ii->fork = tocpu64(li->fork);
-	for(i = 0; i < ii->indirect_count; i++) {
+	for(i = 0; i < LEAN_INODE_EXTENTS; i++) {
 		ii->extent_starts[i] = tocpu64(li->extent_starts[i]);
 		ii->extent_sizes[i] = tocpu32(li->extent_sizes[i]);
 	}
@@ -161,7 +161,7 @@ void lean_info_to_inode(const struct lean_ino_info *ii, \
 	li->indirect_first = tole64(ii->indirect_first);
 	li->indirect_last = tole64(ii->indirect_last);
 	li->fork = tole64(ii->fork);
-	for(i = 0; i < ii->indirect_count; i++) {
+	for(i = 0; i < LEAN_INODE_EXTENTS; i++) {
 		li->extent_starts[i] = tole64(ii->extent_starts[i]);
 		li->extent_sizes[i] = tocpu32(ii->extent_sizes[i]);
 	}

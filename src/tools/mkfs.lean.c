@@ -171,7 +171,8 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
 	root->link_count = 1;
 	root->uid = getuid();
 	root->gid = getgid();
-	root->attr = LIA_RUSR | LIA_WUSR | LIA_XUSR | LIA_PREALLOC | LIA_FMT_DIR;
+	root->attr = LIA_RUSR | LIA_WUSR | LIA_XUSR | \
+		LIA_PREALLOC | LIA_FMT_DIR;
 	root->size = data_size;
 	root->sector_count = prealloc;
 	clock_gettime(CLOCK_REALTIME, &ts);
@@ -300,7 +301,7 @@ int main(int argc, char **argv)
 			break;
 		case 'U':
 			if(uuid_parse(optarg, uuid))
-				error(0, 0, "Unable to parse UUID \"%s\"; generating one automatically", \
+				error(0, 0, "Unable to parse UUID \"%s\"; generating one automatically",
 					optarg);
 			break;
 		case '?':
@@ -310,13 +311,13 @@ int main(int argc, char **argv)
 		}
 	}
 	
-	device = argv[optind];
 	/* Don't use error() here for output consistency */
-	if (!device) {
+	if (optind >= argc || !argv[optind]) {
 		fprintf(stderr, help_msg);
 		return -1;
 	}
 
+	device = argv[optind];
 	fd = open(device, O_EXCL | O_RDWR);
 	if (fd < 0)
 		error(-1, errno, "Error opening %s", device);

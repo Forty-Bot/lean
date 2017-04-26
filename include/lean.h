@@ -131,6 +131,7 @@ struct lean_inode {
  * TODO: reduce to smallest necessary info for driver
  */
 struct lean_ino_info {
+	IN vfs_inode;
 	uint8_t extent_count; /* Number of extents in this inode */
 	uint32_t indirect_count; /* Number of owned indirects */
 	uint32_t link_count; /* Number of references to this file */
@@ -148,18 +149,7 @@ struct lean_ino_info {
 	uint64_t fork; /* Inode of fork, if existing */
 	uint64_t extent_starts[LEAN_INODE_EXTENTS];
 	uint32_t extent_sizes[LEAN_INODE_EXTENTS];
-	IN vfs_inode;
 };
-
-#ifdef __KERNEL__
-/*
- * Extract a struct lean_ino_info from a struct inode
- */
-static inline struct lean_ino_info *LEAN_I(struct inode *inode)
-{
-	return list_entry(inode, struct lean_ino_info, vfs_inode);
-}
-#endif /* __KERNEL__ */
 
 /*
  * Enum containing all attributes of an inode
@@ -216,12 +206,7 @@ struct lean_dir_entry {
 	uint8_t name[4]; /* May be larger or smaller than 4 */
 } __attribute__((packed));
 
-struct lean_dentry_info {
-	uint64_t inode;
-	uint8_t type; /* Type of the file, see: enum file_type */
-	uint16_t name_length; /* Length of the name */
-	uint8_t *name;
-};
+#define LEAN_DIR_NAME_MAX (sizeof(uint8_t) * sizeof(struct lean_dir_entry) - 12)
 
 /* 
  * File type used in dir_entry
@@ -229,9 +214,9 @@ struct lean_dentry_info {
  */
 enum lean_file_type {
 	LFT_NONE = 0, /* An empty entry */
-	LFT_REG = LIA_FMT_REG >> 29,
-	LFT_DIR = LIA_FMT_DIR >> 29,
-	LFT_SYM = LIA_FMT_SYM >> 29
+	LFT_REG = 1,
+	LFT_DIR = 2,
+	LFT_SYM = 3
 };
 
 /* leanfs.c */
