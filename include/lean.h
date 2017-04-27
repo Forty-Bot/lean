@@ -206,7 +206,7 @@ struct lean_dir_entry {
 	uint8_t name[4]; /* May be larger or smaller than 4 */
 } __attribute__((packed));
 
-#define LEAN_DIR_NAME_MAX (sizeof(uint8_t) * sizeof(struct lean_dir_entry) - 12)
+#define LEAN_DIR_NAME_MAX (256 * 16 - 12)
 
 /* 
  * File type used in dir_entry

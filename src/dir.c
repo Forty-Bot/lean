@@ -139,7 +139,6 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 			off += de->entry_length * sizeof(struct lean_dir_entry);
 			ctx->pos = off + n * PAGE_SIZE;
 			de = (struct lean_dir_entry *)(kaddr + off);
-			pr_err("lean: new offset is %u; last byte is %u", off, lean_last_byte(inode, n));
 		}
 		lean_put_page(page);
 	}
@@ -178,7 +177,7 @@ static int lean_match(struct dir_context *ctx, const char *name, int len,
 	return 0;
 }
 
-static struct dentry *lean_lookup(struct inode *dir, struct dentry *dentry,
+static struct dentry *lean_lookup(struct inode *dir, struct dentry *de,
 	unsigned flags)
 {
 	int err;
@@ -186,11 +185,11 @@ static struct dentry *lean_lookup(struct inode *dir, struct dentry *dentry,
 	struct inode *inode = NULL;
 	struct lean_filename_match match = {
 		.ctx = { &lean_match, 0 },
-		.name = dentry->d_name.name,
-		.len = dentry->d_name.len
+		.name = de->d_name.name,
+		.len = de->d_name.len
 	};
 
-	if (dentry->d_name.len > LEAN_DIR_NAME_MAX)
+	if (de->d_name.len > LEAN_DIR_NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
 
 	err = lean_readdir(dir, &match.ctx);
@@ -205,7 +204,7 @@ static struct dentry *lean_lookup(struct inode *dir, struct dentry *dentry,
 			return ERR_PTR(PTR_ERR(inode));
 		}
 	}
-	return d_splice_alias(inode, dentry);
+	return d_splice_alias(inode, de);
 }
 
 const struct inode_operations lean_dir_inode_ops = {

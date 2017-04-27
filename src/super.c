@@ -7,7 +7,30 @@
 #include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/statfs.h>
 #include <linux/slab.h>
+
+static int lean_statfs(struct dentry *de, struct kstatfs *buf)
+{
+	struct lean_sb_info *sbi = (struct lean_sb_info *) de->d_sb->s_fs_info;
+	uint64_t fsid;
+
+	strncpy((void *) &buf->f_type,
+		LEAN_MAGIC_SUPERBLOCK, sizeof(buf->f_type));
+	buf->f_bsize = buf->f_frsize = 512;
+	buf->f_blocks = sbi->sectors_total;
+	buf->f_bfree = buf->f_bavail = sbi->sectors_free;
+	/* We don't have hard inode limits, so don't bother */
+	buf->f_files = buf->f_ffree = 0;
+	/* Ripped from fs/ext2/super.c */
+	fsid = le64_to_cpup((void *) sbi->uuid) ^
+	       le64_to_cpup((void *) sbi->uuid + sizeof(uint64_t));
+	buf->f_fsid.val[0] = fsid & 0xFFFFFFFFUL;
+	buf->f_fsid.val[1] = (fsid >> 32) & 0xFFFFFFFFUL;
+	buf->f_namelen = LEAN_DIR_NAME_MAX;
+	buf->f_flags = de->d_sb->s_flags;
+	return 0;
+}
 
 static void lean_put_super(struct super_block *s)
 {
@@ -66,7 +89,8 @@ static void lean_destroy_inodecache(void)
 static struct super_operations const lean_super_ops = {
 	.alloc_inode = lean_inode_alloc,
 	.destroy_inode = lean_inode_free,
-	.put_super = lean_put_super
+	.put_super = lean_put_super,
+	.statfs = lean_statfs
 };
 	
 static int lean_fill_super(struct super_block *s, void *data, int silent)
