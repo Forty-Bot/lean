@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <error.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -121,7 +122,7 @@ uint64_t generate_bm(int fd, struct lean_sb_info *sb)
 
 	for(i = 1; i < bands; i++) {
 		if(write_at_sector(fd, i * band_sec, bm, bm_size))
-			error(-1, errno, "Unable to write band %lu bitmap", i);
+			error(-1, errno, "Unable to write band %"PRIu64" bitmap", i);
 	}
 	return 0;
 }
@@ -240,7 +241,7 @@ int parse_long(const char* str, long* n)
 			ret = -1;
 		}
 		if (endp[0] != '\0' || str[0] == '\0') {
-			error(0, 0, "Error parsing \"%s\" at character %ld", \
+			error(0, 0, "Error parsing \"%s\" at character %td",
 				str, endp - str);
 			ret = -1;
 		}
@@ -263,7 +264,7 @@ int main(int argc, char **argv)
 	long log2_band_sec = 0; /* log2(Sectors in a band) */
 	long band_sec = 1 << 18; /* Sectors in a band */
 	long new_band_sec = 0; /* Possible new value of sectors in a band */
-	long prealloc = 8; /* Sectors to preallocate */
+	long prealloc = 1; /* Sectors to preallocate */
 	long sb_offset = 1; /* Sector the suberblock resides in */
 	long sectors; /* Total sectors on the device */
 	off_t size; /* Size of the device in bytes */
