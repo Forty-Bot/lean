@@ -177,7 +177,7 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
 	root->size = data_size;
 	root->sector_count = prealloc;
 	clock_gettime(CLOCK_REALTIME, &ts);
-	time = (ts.tv_sec * 1000000L) + (ts.tv_nsec / 1000);
+	time = lean_time(ts);
 	root->time_access = time;
 	root->time_status = time;
 	root->time_modify = time;

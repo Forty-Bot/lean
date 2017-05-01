@@ -193,6 +193,10 @@ enum lean_inode_attr {
 	LIA_FMT_FORK = (int) (4u << 29) /* Fork */
 };
 
+#define LIA_ISFMT_REG(a) (((a) & LIA_FMT_REG) == LIA_FMT_REG)
+#define LIA_ISFMT_DIR(a) (((a) & LIA_FMT_DIR) == LIA_FMT_DIR)
+#define LIA_ISFMT_SYM(a) (((a) & LIA_FMT_SYM) == LIA_FMT_SYM)
+
 /* 
  * A 16-byte entry for a file in a directory
  * dir_entry.name may be longer or shorter than 4 bytes
@@ -219,7 +223,19 @@ enum lean_file_type {
 	LFT_SYM = 3
 };
 
-/* leanfs.c */
+/* Time helper functions */
+static inline uint64_t lean_time(struct timespec ts) {
+	return (ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
+}
+
+static inline struct timespec lean_timespec(uint64_t time) {
+	struct timespec ts;
+	ts.tv_sec = time / 1000000;
+	ts.tv_nsec = time * 1000;
+	return ts;
+}
+
+/* util.c */
 #define WRONG_CHECKSUM 1
 uint32_t lean_checksum(const void* data, size_t size);
 int lean_superblock_to_info(const struct lean_superblock *sb, \

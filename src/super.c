@@ -89,6 +89,7 @@ static void lean_destroy_inodecache(void)
 static struct super_operations const lean_super_ops = {
 	.alloc_inode = lean_inode_alloc,
 	.destroy_inode = lean_inode_free,
+	.write_inode = lean_write_inode,
 	.put_super = lean_put_super,
 	.statfs = lean_statfs
 };
@@ -109,7 +110,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	}
 
 	if(!sb_set_blocksize(s, 512)) {
-		pr_err("lean: cannot set block size of dev %s to 512\n",
+		pr_err("lean: cannot set block size of dev %s to 512",
 			s->s_id);
 		goto failure;
 	}
@@ -118,7 +119,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	for (sec = 1; !found_sb && sec <= 32; sec++) {
 		bh = sb_bread(s, sec);
 		if (!bh) {
-			pr_err("lean: Unable to read sector %d on dev %s\n", \
+			pr_err("lean: Unable to read sector %d on dev %s", \
 				sec, s->s_id);
 			ret = -EIO;
 			goto failure;
@@ -134,32 +135,32 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	/* Reverse previous increment */
 	sec--;
 	if (!found_sb) {
-		pr_err("lean: Can't find a lean fs on dev %s\n", s->s_id);
+		pr_err("lean: Can't find a lean fs on dev %s", s->s_id);
 		goto failure;
 	}
 
-	pr_debug("lean: found superblock at sector %d\n", sec);
+	pr_debug("lean: found superblock at sector %d", sec);
 	s->s_magic = le32_to_cpup((__le32 *) sb->magic);
 	if (sb->fs_version_major != LEAN_VERSION_MAJOR || \
 		sb->fs_version_minor != LEAN_VERSION_MINOR) {
-		pr_err("lean: Unsupported version %u.%u\n", \
+		pr_err("lean: Unsupported version %u.%u", \
 			sb->fs_version_major, sb->fs_version_minor);
 		goto bh_failure;
 	}
 	if (le32_to_cpu(sb->state) != 1) {
-		pr_err("lean: dev %s not unmounted properly\n", s->s_id);
-		goto bh_failure;
+		pr_warn("lean: dev %s not unmounted properly!", s->s_id);
+		/*goto bh_failure;*/
 	}
 	if (lean_superblock_to_info(sb, sbi)) {
-		pr_err("lean: Wrong superblock checksum\n");
+		pr_err("lean: Wrong superblock checksum");
 		goto bh_failure;
 	}
 	if (sbi->super_primary != sec) {
-		pr_err("lean: Inconsistant superblock\n");
+		pr_err("lean: Inconsistant superblock");
 		goto bh_failure;
 	}
 	if (sbi->log2_band_sectors < 12) {
-		pr_err("lean: Invalid number of sectors per band: %llu\n", \
+		pr_err("lean: Invalid number of sectors per band: %llu", \
 			sbi->band_sectors);
 		goto bh_failure;
 	}
@@ -172,23 +173,24 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	strncpy(s->s_id, sbi->volume_label, sizeof(s->s_id));
 	s->s_id[31] = '\0';
 
-	s->s_flags |= MS_RDONLY;
+	/*s->s_flags |= MS_RDONLY;*/
 	s->s_time_gran = 1000;
 	
 	root = lean_iget(s, sbi->root);
 	if(IS_ERR(root)) {
 		ret = PTR_ERR(root);
+		pr_err("lean: error reading root inode:");
 		goto bh_failure;
 	}
 	if(!S_ISDIR(root->i_mode) || !root->i_blocks || !root->i_size) {
-		pr_err("lean: corrupt root inode\n");
+		pr_err("lean: corrupt root inode");
 		iput(root);
 		goto bh_failure;
 	}
 
 	s->s_root = d_make_root(root);
 	if(!s->s_root) {
-		pr_err("lean: get root inode failed\n");
+		pr_err("lean: get root inode failed");
 		ret = -ENOMEM;
 		goto bh_failure;
 	}
