@@ -228,10 +228,10 @@ static inline uint64_t lean_time(struct timespec ts) {
 	return (ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
 }
 
-static inline struct timespec lean_timespec(uint64_t time) {
+static inline struct timespec lean_timespec(int64_t time) {
 	struct timespec ts;
 	ts.tv_sec = time / 1000000;
-	ts.tv_nsec = time * 1000;
+	ts.tv_nsec = (time % 1000000) * 1000;
 	return ts;
 }
 

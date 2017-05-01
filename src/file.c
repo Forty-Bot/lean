@@ -11,6 +11,10 @@ static ssize_t lean_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	return generic_file_read_iter(iocb, iter);
 }
 
+const struct inode_operations lean_file_inode_ops = {
+	.setattr = lean_setattr
+};
+
 const struct file_operations lean_file_ops = {
 	.llseek = generic_file_llseek,
 	.read_iter = lean_read_iter,

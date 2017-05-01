@@ -209,4 +209,5 @@ static struct dentry *lean_lookup(struct inode *dir, struct dentry *de,
 
 const struct inode_operations lean_dir_inode_ops = {
 	.lookup = lean_lookup,
+	.setattr = lean_setattr
 };

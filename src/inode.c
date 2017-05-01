@@ -5,6 +5,7 @@
 #include <linux/err.h>
 #include <linux/fs.h>
 #include <linux/mpage.h>
+#include <linux/quotaops.h>
 #include <linux/writeback.h>
 
 static int lean_get_block(struct inode *inode, sector_t sec, \
@@ -111,13 +112,14 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 	i_gid_write(inode, li->gid);
 	set_nlink(inode, li->link_count);
 	inode->i_atime = lean_timespec(li->time_access);
-	inode->i_ctime = lean_timespec(li->time_create);
+	inode->i_ctime = lean_timespec(li->time_status);
 	inode->i_mtime = lean_timespec(li->time_modify);
 	inode->i_size = li->size;
 	inode->i_blocks = li->sector_count;
 	
 	inode->i_mapping->a_ops = &lean_aops;
 	if (S_ISREG(inode->i_mode)) {
+		inode->i_op = &lean_file_inode_ops;
 		inode->i_fop = &lean_file_ops;
 	} else {
 		inode->i_op = &lean_dir_inode_ops;
@@ -153,7 +155,7 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 		li->attr |= LIA_FMT_DIR;
 	if (S_ISLNK(inode->i_mode))
 		li->attr |= LIA_FMT_SYM;
-	li->attr &= (LIA_SYNC | LIA_NOATIME | LIA_IMMUTABLE);
+	li->attr &= ~(LIA_SYNC | LIA_NOATIME | LIA_IMMUTABLE);
 	if (IS_SYNC(inode))
 		li->attr |= LIA_SYNC;
 	if (IS_NOATIME(inode))
@@ -161,11 +163,11 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 	if (IS_IMMUTABLE(inode))
 		li->attr |= LIA_IMMUTABLE;
 
-	i_uid_write(inode, li->uid);
-	i_gid_write(inode, li->gid);
+	li->uid	= i_uid_read(inode);
+	li->gid	= i_gid_read(inode);
 	li->link_count = inode->i_nlink;
 	li->time_access = lean_time(inode->i_atime);
-	li->time_create = lean_time(inode->i_ctime);
+	li->time_status = lean_time(inode->i_ctime);
 	li->time_modify = lean_time(inode->i_mtime);
 	li->size = inode->i_size;
 	li->sector_count = inode->i_blocks;
@@ -184,5 +186,24 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 		}
 	}
 	brelse(bh);
+	return ret;
+}
+
+/* A combination of afs_setattr and ext2_setattr for now */
+int lean_setattr(struct dentry *de, struct iattr *attr)
+{
+	int ret;
+	struct inode *inode = d_inode(de);
+
+	if (attr->ia_valid & ATTR_SIZE)
+		return -EINVAL;
+
+	ret = setattr_prepare(de, attr);
+	if (ret)
+		return ret;
+
+	setattr_copy(inode, attr);
+	mark_inode_dirty(inode);
+
 	return ret;
 }

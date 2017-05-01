@@ -33,9 +33,11 @@ struct inode *lean_inode_alloc(struct super_block *s);
 /* inode.c */
 struct inode *lean_iget(struct super_block *s, uint64_t ino);
 int lean_write_inode(struct inode *inode, struct writeback_control *wbc);
+int lean_setattr(struct dentry *de, struct iattr *attr);
 
 /* file.c */
 extern const struct file_operations lean_file_ops;
+extern const struct inode_operations lean_file_inode_ops;
 
 /* dir.c */
 extern const struct file_operations lean_dir_ops;
