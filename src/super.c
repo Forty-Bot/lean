@@ -11,7 +11,7 @@
 #include <linux/slab.h>
 
 /* Taken from fs/ext2/super.c */
-void lean_msg(struct super_block *sb, const char *prefix, const char *fmt, ...)
+void lean_msg(struct super_block *s, const char *prefix, const char *fmt, ...)
 {
         struct va_format vaf;
         va_list args;
@@ -21,7 +21,7 @@ void lean_msg(struct super_block *sb, const char *prefix, const char *fmt, ...)
         vaf.fmt = fmt;
         vaf.va = &args;
 
-        printk("%slean (%s): %pV\n", prefix, sb->s_id, &vaf);
+        printk("%slean (%s): %pV\n", prefix, s->s_id, &vaf);
 
         va_end(args);
 }
@@ -118,7 +118,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	struct buffer_head *bh;
 	struct inode *root;
 	struct lean_superblock *sb;
-	struct lean_sb_info *sbi = kmalloc(sizeof(struct lean_sb_info), \
+	struct lean_sb_info *sbi = kmalloc(sizeof(struct lean_sb_info),
 		GFP_KERNEL);
 
 	if (!sbi) {
@@ -126,7 +126,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	}
 
 	if(!sb_set_blocksize(s, 512)) {
-		pr_err("lean: cannot set block size of dev %s to 512",
+		lean_msg(s, KERN_ERR, "cannot set block size of dev %s to 512",
 			s->s_id);
 		goto failure;
 	}
@@ -135,7 +135,8 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	for (sec = 1; !found_sb && sec <= 32; sec++) {
 		bh = sb_bread(s, sec);
 		if (!bh) {
-			pr_err("lean: Unable to read sector %d on dev %s", \
+			lean_msg(s, KERN_ERR,
+				"unable to read sector %d on dev %s",
 				sec, s->s_id);
 			ret = -EIO;
 			goto failure;
@@ -151,32 +152,34 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	/* Reverse previous increment */
 	sec--;
 	if (!found_sb) {
-		pr_err("lean: Can't find a lean fs on dev %s", s->s_id);
+		lean_msg(s, KERN_ERR, "can't find a lean fs on dev %s",
+			s->s_id);
 		goto failure;
 	}
 
-	pr_debug("lean: found superblock at sector %d", sec);
+	lean_msg(s, KERN_INFO, "found superblock at sector %d", sec);
 	s->s_magic = le32_to_cpup((__le32 *) sb->magic);
 	if (sb->fs_version_major != LEAN_VERSION_MAJOR || \
 		sb->fs_version_minor != LEAN_VERSION_MINOR) {
-		pr_err("lean: Unsupported version %u.%u", \
+		lean_msg(s, KERN_ERR, "unsupported version %u.%u",
 			sb->fs_version_major, sb->fs_version_minor);
 		goto bh_failure;
 	}
 	if (le32_to_cpu(sb->state) != 1) {
-		pr_warn("lean: dev %s not unmounted properly!", s->s_id);
-		/*goto bh_failure;*/
+		lean_msg(s, KERN_WARNING, "dev %s not unmounted properly!",
+			s->s_id);
 	}
 	if (lean_superblock_to_info(sb, sbi)) {
-		pr_err("lean: Wrong superblock checksum");
+		lean_msg(s, KERN_ERR, "wrong superblock checksum");
 		goto bh_failure;
 	}
 	if (sbi->super_primary != sec) {
-		pr_err("lean: Inconsistant superblock");
+		lean_msg(s, KERN_ERR, "inconsistant superblock");
 		goto bh_failure;
 	}
 	if (sbi->log2_band_sectors < 12) {
-		pr_err("lean: Invalid number of sectors per band: %llu", \
+		lean_msg(s, KERN_ERR,
+			"invalid number of sectors per band: %llu",
 			sbi->band_sectors);
 		goto bh_failure;
 	}
@@ -195,18 +198,18 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	root = lean_iget(s, sbi->root);
 	if(IS_ERR(root)) {
 		ret = PTR_ERR(root);
-		pr_err("lean: error reading root inode:");
+		lean_msg(s, KERN_ERR, "error reading root inode:");
 		goto bh_failure;
 	}
 	if(!S_ISDIR(root->i_mode) || !root->i_blocks || !root->i_size) {
-		pr_err("lean: corrupt root inode");
+		lean_msg(s, KERN_ERR, "corrupt root inode");
 		iput(root);
 		goto bh_failure;
 	}
 
 	s->s_root = d_make_root(root);
 	if(!s->s_root) {
-		pr_err("lean: get root inode failed");
+		lean_msg(s, KERN_ERR, "get root inode failed");
 		ret = -ENOMEM;
 		goto bh_failure;
 	}

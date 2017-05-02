@@ -181,7 +181,8 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 	if (wbc->sync_mode == WB_SYNC_ALL) {
 		sync_dirty_buffer(bh);
 		if (buffer_req(bh) && !buffer_uptodate(bh)) {
-			pr_warn("lean: unable to sync inode %lu", ino);
+			lean_msg(s, KERN_WARNING, "unable to sync inode %lu",
+				ino);
 			ret = -EIO;
 		}
 	}
