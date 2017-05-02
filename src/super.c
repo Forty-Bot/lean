@@ -112,6 +112,11 @@ static struct super_operations const lean_super_ops = {
 	
 static int lean_fill_super(struct super_block *s, void *data, int silent)
 {
+#define lean_msg(s, prefix, fmt, ...) \
+if (!silent) { \
+	lean_msg(s, prefix, fmt, ##__VA_ARGS__); \
+}
+
 	bool found_sb = false;
 	int ret = -EINVAL;
 	int sec;
@@ -221,6 +226,7 @@ bh_failure:
 failure:
 	kfree(sbi);
 	return ret;
+#undef lean_msg
 }
 
 static struct dentry *lean_mount(struct file_system_type *fs_type, int flags,
