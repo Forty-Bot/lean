@@ -29,6 +29,8 @@ static inline unsigned LEAN_DT(enum lean_file_type type) {
 
 /* super.c */
 struct inode *lean_inode_alloc(struct super_block *s);
+extern __printf(3, 4)
+void lean_msg(struct super_block *, const char *, const char *, ...);
 
 /* inode.c */
 struct inode *lean_iget(struct super_block *s, uint64_t ino);

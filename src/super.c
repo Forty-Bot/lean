@@ -10,6 +10,22 @@
 #include <linux/statfs.h>
 #include <linux/slab.h>
 
+/* Taken from fs/ext2/super.c */
+void lean_msg(struct super_block *sb, const char *prefix, const char *fmt, ...)
+{
+        struct va_format vaf;
+        va_list args;
+
+        va_start(args, fmt);
+
+        vaf.fmt = fmt;
+        vaf.va = &args;
+
+        printk("%slean (%s): %pV\n", prefix, sb->s_id, &vaf);
+
+        va_end(args);
+}
+
 static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 {
 	struct lean_sb_info *sbi = (struct lean_sb_info *) de->d_sb->s_fs_info;
