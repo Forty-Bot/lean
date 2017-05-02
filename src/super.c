@@ -107,7 +107,8 @@ static struct super_operations const lean_super_ops = {
 	.destroy_inode = lean_inode_free,
 	.write_inode = lean_write_inode,
 	.put_super = lean_put_super,
-	.statfs = lean_statfs
+	.statfs = lean_statfs,
+	.show_options = generic_show_options
 };
 	
 static int lean_fill_super(struct super_block *s, void *data, int silent)
@@ -163,6 +164,9 @@ if (!silent) { \
 	}
 
 	lean_msg(s, KERN_INFO, "found superblock at sector %d", sec);
+	
+	save_mount_options(s, data);
+
 	s->s_magic = le32_to_cpup((__le32 *) sb->magic);
 	if (sb->fs_version_major != LEAN_VERSION_MAJOR || \
 		sb->fs_version_minor != LEAN_VERSION_MINOR) {
