@@ -10,7 +10,7 @@
  */
 static inline struct lean_ino_info *LEAN_I(struct inode *inode)
 {
-	return (struct lean_ino_info *) inode;
+	return list_entry(inode, struct lean_ino_info, vfs_inode);
 }
 
 static inline unsigned LEAN_DT(enum lean_file_type type) {

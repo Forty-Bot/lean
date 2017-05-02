@@ -17,7 +17,7 @@ static int lean_get_block(struct inode *inode, sector_t sec, \
 	uint32_t size = li->extent_sizes[i];
 
 	if(sec > li->sector_count)
-		return -ENOSPC;
+		return -ENXIO;
 	while (sec > size && i < LEAN_INODE_EXTENTS) {
 		extent = li->extent_starts[i];
 		size = li->extent_sizes[i];
@@ -26,7 +26,7 @@ static int lean_get_block(struct inode *inode, sector_t sec, \
 	}
 	/* Double check to ensure consistency */
 	if (i == LEAN_INODE_EXTENTS)
-		return -ENOSPC;
+		return -ENXIO;
 
 	map_bh(bh_result, inode->i_sb, extent + sec);
 	return 0;
