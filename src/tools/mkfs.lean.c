@@ -5,6 +5,7 @@
 #include <error.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,14 +26,14 @@ int write_at_sector(int fd, uint64_t sec, const void *buf, size_t n)
 	int ret = 0; /* Our return value */
 	int err_save = 0; /* A saved value of errno */
 	ssize_t wr; /* Return value of write() */
-	if(lseek(fd, sec * 512, SEEK_SET) < 0) {
+	if (lseek(fd, sec * 512, SEEK_SET) < 0) {
 		err_save = errno;
 		ret = -1;
 		goto end;
 	}
 	while(n > 0) {
 		wr = write(fd, buf, n);
-		if(wr < 0) {
+		if (wr < 0) {
 			err_save = errno;
 			ret = -1;
 			goto end;
@@ -44,9 +45,9 @@ int write_at_sector(int fd, uint64_t sec, const void *buf, size_t n)
 		buf += wr;	
 	}
 end:
-	if(fsync(fd)) {
+	if (fsync(fd)) {
 		/* Don't save the errno if we already errored */
-		if(err_save == 0)
+		if (err_save == 0)
 			err_save = errno;
 		ret = -1;
 	}
@@ -92,11 +93,11 @@ uint64_t generate_bm(int fd, struct lean_sb_info *sb)
 	
 	band_sec = 1 << sb->log2_band_sectors;
 	band_bm_sec = band_sec >> 12;
-	bands = 1 + (sb->sectors_total - 1) / band_sec;
+	bands = 1 + (sb->sectors_total - 1)/band_sec;
 	
 	bm_size = band_sec / 8;
 	bm = malloc(bm_size);
-	if(!bm)
+	if (!bm)
 		error(-1, errno, "Could not allocate memory for bitmap");
 	memset(bm, 0, bm_size);
 
@@ -107,12 +108,12 @@ uint64_t generate_bm(int fd, struct lean_sb_info *sb)
 	 * block numbers start at 0 */
 	zero_sec = sb->root + sb->prealloc;
 	fill_bitmap(bm, zero_sec);
-	sb->sectors_free = sb->sectors_total - \
+	sb->sectors_free = sb->sectors_total -
 		(zero_sec + (bands - 1) * band_bm_sec);
-	sb->super_backup = ((sb->sectors_total < band_sec) ? \
+	sb->super_backup = ((sb->sectors_total < band_sec) ?
 		sb->sectors_total : band_sec) - 1;
 	set_sec(bm, sb->super_backup);
-	if(write_at_sector(fd, sb->bitmap_start, bm, bm_size))
+	if (write_at_sector(fd, sb->bitmap_start, bm, bm_size))
 		error(-1, errno, "Unable to write band zero bitmap");
 
 	/* Because all band bitmaps (except band 0's) are identical,
@@ -121,7 +122,7 @@ uint64_t generate_bm(int fd, struct lean_sb_info *sb)
 	fill_bitmap(bm, band_bm_sec);
 
 	for(i = 1; i < bands; i++) {
-		if(write_at_sector(fd, i * band_sec, bm, bm_size))
+		if (write_at_sector(fd, i * band_sec, bm, bm_size))
 			error(-1, errno, "Unable to write band %"PRIu64" bitmap", i);
 	}
 	return 0;
@@ -131,8 +132,8 @@ uint64_t generate_bm(int fd, struct lean_sb_info *sb)
  * Generate a new filesystem on device fd
  * returns 0 on success
  */
-int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
-	uint8_t log2_band_sec, const uuid_t uuid, \
+int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc,
+	uint8_t log2_band_sec, const uuid_t uuid,
 	const uint8_t *volume_label, uint64_t sec)
 {
 	size_t data_size; /* Root directory data size */
@@ -146,7 +147,7 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
 	
 	sbi = malloc(sizeof(*sbi));
 	sb = malloc(sizeof(*sb));
-	if(!sbi || !sb)
+	if (!sbi || !sb)
 		error(-1, errno, "Could not allocate memory for superblock");
 	memset(sbi, 0, sizeof(*sbi));
 
@@ -157,13 +158,13 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
 	sbi->volume_label[63] = '\0';
 	sbi->sectors_total = sec;
 	sbi->super_primary = sb_offset;
-	if(generate_bm(fd, sbi))
+	if (generate_bm(fd, sbi))
 		error(-1, 0, "Could not write bitmap to disk");
 	
 	data_size = 2 * sizeof(*data);
 	root = malloc(sizeof(*root));
 	root_ino = malloc(sizeof(*root_ino) + data_size);
-	if(!root || !root_ino)
+	if (!root || !root_ino)
 		error(-1, errno, "Could not allocate memory for root inode");
 	data = (struct lean_dir_entry *) (&root_ino[1]);
 	memset(root_ino, 0, sizeof(*root_ino) + data_size);
@@ -172,7 +173,7 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc, \
 	root->link_count = 1;
 	root->uid = getuid();
 	root->gid = getgid();
-	root->attr = LIA_RUSR | LIA_WUSR | LIA_XUSR | \
+	root->attr = LIA_RUSR | LIA_WUSR | LIA_XUSR |
 		LIA_PREALLOC | LIA_FMT_DIR;
 	root->size = data_size;
 	root->sector_count = prealloc;
@@ -256,14 +257,16 @@ const char help_msg[] =
 
 int main(int argc, char **argv)
 {
+	bool band_sec_set = false; /* Set if -b is passed */
 	char *device; /* The name of the target device */
 	char volume_name[64] = ""; /* The volume name */
 	char uuid_string[37]; /* The string representation of the UUID */
 	int c; /* The option returned by UUID */
 	int fd; /* The file descriptor of the device */
 	long log2_band_sec = 0; /* log2(Sectors in a band) */
-	long band_sec = 1 << 18; /* Sectors in a band */
-	long new_band_sec = 0; /* Possible new value of sectors in a band */
+	long bands;
+	long band_sec; /* Sectors in a band */
+	long new_band_sec; /* Possible new value of sectors in a band */
 	long prealloc = 1; /* Sectors to preallocate */
 	long sb_offset = 1; /* Sector the suberblock resides in */
 	long sectors; /* Total sectors on the device */
@@ -277,9 +280,9 @@ int main(int argc, char **argv)
 		case 'b':
 			if (parse_long(optarg, &band_sec))
 				return -1;
-			if (band_sec < 4096 || \
+			if (band_sec < 4096 ||
 				(band_sec & (band_sec - 1)))
-				error(-1, 0, "Sectors per band must be a greater than 4096 and a power of 2");
+				error(-1, 0, "Sectors per band must be greater than or equal to 4096 and a power of 2");
 			break;
 		case 'f':
 			if (parse_long(optarg, &sb_offset))
@@ -295,13 +298,13 @@ int main(int argc, char **argv)
 			volume_name[63] = '\0';
 			break;
 		case 'p':
-			if(parse_long(optarg, &prealloc)) 
+			if (parse_long(optarg, &prealloc)) 
 				return -1;
-			if(prealloc < 1 || prealloc > 256)
+			if (prealloc < 1 || prealloc > 256)
 				error(-1, 0, "Between 1 and 256 sectors must be preallocated");
 			break;
 		case 'U':
-			if(uuid_parse(optarg, uuid))
+			if (uuid_parse(optarg, uuid))
 				error(0, 0, "Unable to parse UUID \"%s\"; generating one automatically",
 					optarg);
 			break;
@@ -325,38 +328,55 @@ int main(int argc, char **argv)
 	
 	size = lseek(fd, 0L, SEEK_END);
 	/* We need at least 4k to fit everything in */
-	if(!(size >> 12))
+	if (!(size >> 12))
 		error(-1, 0, "%s is too small! (only %lu bytes)", device, size);
 	
 	/* Round size to the nearest multiple of 512 */
 	sectors = size >> 9;
 	size = sectors << 9;
+
+	/* Try to keep bands below 256 while the band size is not greater than
+	 * 64 sectors */
+#define MiB ((1024 * 1024) / 512)
+#define GiB ((1024 * 1024 * 1024) / 512)
+	if (!band_sec_set) {
+		if (sectors <= 512 * MiB)
+			band_sec = 1 << 12;
+		else if (sectors <= 4 * GiB)
+			band_sec = 1 << 15;
+		else
+			band_sec = 1 << 18;
+	}
+#undef MiB
+#undef GiB
 	
 	/* Reduce band_sec if a smaller size would only use one band */
 	new_band_sec = upper_power_of_two(sectors);
-	if(new_band_sec > band_sec)
+	if (new_band_sec > band_sec)
 		new_band_sec = band_sec;
-	if(new_band_sec < 4096)
+	if (new_band_sec < 4096)
 		new_band_sec = 4096;
-	if(new_band_sec != band_sec) {
-		printf("Using %lu sectors per band instead of %lu because only one band is needed\n", \
+	if (new_band_sec != band_sec) {
+		printf("Using %lu sectors per band instead of %lu because only one band is needed\n",
 			new_band_sec, band_sec);
 		band_sec = new_band_sec;
 	}
-
-	if(uuid_is_null(uuid))
+	bands = 1 + (sectors - 1)/band_sec;
+	
+	if (uuid_is_null(uuid))
 		uuid_generate(uuid);
 	uuid_unparse(uuid, uuid_string);
 	
 	printf("Formatting %s with the following options:\n"
-		"Size:                 %lu\n"
-		"Sectors:              %lu\n"
-		"Superblock offset:    %lu\n"
-		"Sectors per band:     %lu\n"
-		"Preallocated sectors: %lu\n"
-		"UUID:                 %s\n"
-		"Volume label:         %s\n", \
-		device, size, sectors, sb_offset, band_sec, \
+		"Size:                        %lu\n"
+		"Sectors:                     %lu\n"
+		"Bands :                      %lu\n"
+		"Sectors per band:            %lu\n"
+		"Superblock offset:           %lu\n"
+		"Default preallocated sectors %lu\n"
+		"UUID:                        %s\n"
+		"Volume label:                %s\n",
+		device, size, sectors, bands, band_sec, sb_offset,
 		prealloc, uuid_string, volume_name);
 
 	/* Compute log2(band_sec) */
@@ -364,6 +384,6 @@ int main(int argc, char **argv)
 		log2_band_sec++;
 	}
 
-	return generate_fs(fd, sb_offset, prealloc, log2_band_sec, uuid, \
+	return generate_fs(fd, sb_offset, prealloc, log2_band_sec, uuid,
 		volume_name, sectors);
 }
