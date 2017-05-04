@@ -8,7 +8,7 @@
 #include <linux/quotaops.h>
 #include <linux/writeback.h>
 
-static int lean_get_block(struct inode *inode, sector_t sec, \
+static int lean_get_block(struct inode *inode, sector_t sec,
 	struct buffer_head *bh_result, int create)
 {
 	int i = 0;

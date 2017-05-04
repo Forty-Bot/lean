@@ -27,6 +27,12 @@ static inline unsigned LEAN_DT(enum lean_file_type type) {
 	}
 }
 
+struct lean_bitmap {
+	uint32_t free;
+	void *start;
+	struct page *first;
+};
+
 /* super.c */
 struct inode *lean_inode_alloc(struct super_block *s);
 extern __printf(3, 4)
@@ -44,5 +50,10 @@ extern const struct inode_operations lean_file_inode_ops;
 /* dir.c */
 extern const struct file_operations lean_dir_ops;
 extern const struct inode_operations lean_dir_inode_ops;
+
+/* balloc.c */
+extern const struct address_space_operations lean_bitmap_aops;
+void lean_put_bitmap(struct lean_bitmap *bitmap);
+struct lean_bitmap *lean_get_bitmap(struct super_block *s, uint64_t band);
 
 #endif /* DRIVER_H */

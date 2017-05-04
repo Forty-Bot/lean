@@ -30,6 +30,10 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 {
 	struct lean_sb_info *sbi = (struct lean_sb_info *) de->d_sb->s_fs_info;
 	uint64_t fsid;
+	/* TESTING */
+	/*int i;
+	struct page *page;
+	struct lean_bitmap *bitmap;*/
 
 	strncpy((void *) &buf->f_type,
 		LEAN_MAGIC_SUPERBLOCK, sizeof(buf->f_type));
@@ -45,6 +49,23 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 	buf->f_fsid.val[1] = (fsid >> 32) & 0xFFFFFFFFUL;
 	buf->f_namelen = LEAN_DIR_NAME_MAX;
 	buf->f_flags = de->d_sb->s_flags;
+
+	/* TESTING... */
+	/*lean_msg(de->d_sb, KERN_ERR, "bs %llu bc %llu bms %llu", sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
+	for (i = 0; i < sbi->band_count; i++) {
+		lean_msg(de->d_sb, KERN_ERR, "getting bitmap %i", i);
+		bitmap = lean_get_bitmap(de->d_sb, i);
+		lean_msg(de->d_sb, KERN_ERR, "got bitmap %i", i);
+		if (IS_ERR(bitmap)) {
+			lean_msg(de->d_sb, KERN_ERR, "invalid bitmap!");
+			continue;
+		}
+		print_hex_dump_bytes("lean: ", DUMP_PREFIX_NONE, bitmap->start, LEAN_SEC);
+		lean_msg(de->d_sb, KERN_ERR, "putting bitmap %i", i);
+		lean_put_bitmap(bitmap);
+		lean_msg(de->d_sb, KERN_ERR, "put bitmap %i", i);
+	}*/
+
 	return 0;
 }
 
@@ -186,13 +207,32 @@ if (!silent) { \
 		lean_msg(s, KERN_ERR, "inconsistant superblock");
 		goto bh_failure;
 	}
-	if (sbi->log2_band_sectors < 12) {
+	/* The lower limit is spec specified (must use at least one sector for
+	 * each bitmap chunk). The upper limit is so we can store the number of
+	 * free sectors as a signed 32-bit integer */
+	if (sbi->log2_band_sectors < 12 || sbi->log2_band_sectors > 31) {
 		lean_msg(s, KERN_ERR,
 			"invalid number of sectors per band: %llu",
 			sbi->band_sectors);
 		goto bh_failure;
 	}
 	
+	/* We need to allocate the bitmap inode before we set s_op */
+	sbi->bitmap = new_inode(s);
+	if (!sbi->bitmap) {
+		ret = -ENOMEM;
+		goto bh_failure;
+	}
+	sbi->bitmap->i_flags = S_PRIVATE;
+	set_nlink(sbi->bitmap, 1);
+	sbi->bitmap->i_size = sbi->sectors_total >> 3;
+	sbi->bitmap->i_blocks = sbi->sectors_total >> 12;
+	sbi->bitmap->i_mapping->a_ops = &lean_bitmap_aops;
+	mapping_set_gfp_mask(sbi->bitmap->i_mapping, GFP_NOFS);
+
+	sbi->bitmap_cache = kzalloc(sizeof(struct lean_bitmap) * sbi->band_count,
+		GFP_KERNEL);
+
 	sbi->sbh = bh;
 	s->s_fs_info = sbi;
 	s->s_op = &lean_super_ops;
@@ -201,7 +241,6 @@ if (!silent) { \
 	strncpy(s->s_id, sbi->volume_label, sizeof(s->s_id));
 	s->s_id[31] = '\0';
 
-	/*s->s_flags |= MS_RDONLY;*/
 	s->s_time_gran = 1000;
 	
 	root = lean_iget(s, sbi->root);

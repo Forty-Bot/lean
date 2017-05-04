@@ -58,7 +58,6 @@ int lean_superblock_to_info(const struct lean_superblock *sb, \
 
 	sbi->prealloc = sb->prealloc + 1;
 	sbi->log2_band_sectors = sb->log2_band_sectors;
-	sbi->band_sectors = 1 << sbi->log2_band_sectors;
 	memcpy(sbi->uuid, sb->uuid, sizeof(sbi->uuid));
 	memcpy(sbi->volume_label, sb->volume_label, sizeof(sbi->volume_label));
 	sbi->sectors_total = tocpu64(sb->sectors_total);
@@ -68,6 +67,11 @@ int lean_superblock_to_info(const struct lean_superblock *sb, \
 	sbi->bitmap_start = tocpu64(sb->bitmap_start);
 	sbi->root = tocpu64(sb->root);
 	sbi->bad = tocpu64(sb->bad);
+	
+	sbi->band_sectors = 1 << sbi->log2_band_sectors;
+	sbi->bitmap_size = 1 << (sbi->log2_band_sectors - 12);
+	sbi->band_count = (sbi->sectors_total + sbi->band_sectors - 1)
+		/ sbi->band_sectors;
 
 	return ret;
 }
