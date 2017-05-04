@@ -9,8 +9,7 @@
 #define le16 __le16
 #define le32 __le32
 #define le64 __le64
-#define BH struct buffer_head
-#define IN struct inode
+struct lean_bitmap;
 #else /* __KERNEL__ */
 #include <stdint.h>
 #include <stdlib.h>
@@ -18,8 +17,6 @@
 #define le16 uint16_t
 #define le32 uint32_t
 #define le64 uint64_t
-#define BH void
-#define IN void *
 #endif /* __KERNEL__ */
 
 #define LEAN_VERSION_MAJOR 0x00
@@ -28,6 +25,8 @@
 static const uint8_t LEAN_MAGIC_SUPERBLOCK[] = { 'L', 'E', 'A', 'N' };
 static const uint8_t LEAN_MAGIC_INDIRECT[] = { 'I', 'N', 'D', 'X' };
 static const uint8_t LEAN_MAGIC_INODE[] = { 'N', 'O', 'D', 'E' };
+
+#define LEAN_SEC 512
 
 /*
  * Structure containing fundamental information about a LEAN volume.
@@ -67,8 +66,15 @@ struct lean_sb_info {
 	uint64_t bitmap_start; /* Sector of the first band's bitmap */
 	uint64_t root; /* Inode of the root dir */
 	uint64_t bad; /* Inode of a file consisting of bad sectors */
-	uint64_t band_sectors;
-	BH *sbh;
+	/* End of on-disk members */
+	uint64_t band_sectors; /* Number of sectors contained in one band */
+	uint64_t band_count; /* Number of bands */
+	uint64_t bitmap_size; /* Band bitmap size in sectors */
+#ifdef __KERNEL__
+	struct inode *bitmap;
+	struct lean_bitmap *bitmap_cache;
+	struct buffer_head *sbh;
+#endif
 };
 
 /* 
@@ -131,7 +137,6 @@ struct lean_inode {
  * TODO: reduce to smallest necessary info for driver
  */
 struct lean_ino_info {
-	IN vfs_inode;
 	uint8_t extent_count; /* Number of extents in this inode */
 	uint32_t indirect_count; /* Number of owned indirects */
 	uint32_t link_count; /* Number of references to this file */
@@ -149,6 +154,9 @@ struct lean_ino_info {
 	uint64_t fork; /* Inode of fork, if existing */
 	uint64_t extent_starts[LEAN_INODE_EXTENTS];
 	uint32_t extent_sizes[LEAN_INODE_EXTENTS];
+#ifdef __KERNEL__
+	struct inode vfs_inode;
+#endif
 };
 
 /*
