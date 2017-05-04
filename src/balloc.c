@@ -6,7 +6,8 @@
 #include <linux/pagemap.h>
 
 /* We map the entire bitmap to a contiguous address_space
- * This avoid dealing with bios or buffer_heads ourselves */
+ * This avoid dealing with bios or buffer_heads ourselves
+ */
 static int lean_get_bitmap_block(struct inode *inode, sector_t sec,
 	struct buffer_head *bh_result, int create)
 {
@@ -20,11 +21,13 @@ static int lean_get_bitmap_block(struct inode *inode, sector_t sec,
 	if (band >= sbi->band_count || band_sec >= sbi->sectors_total ||
 		sec >= sbi->band_count * sbi->band_sectors)
 		return -ENXIO;
-	
+
 	if (band == 0)
 		band_sec += sbi->bitmap_start;
 
-	lean_msg(s, KERN_DEBUG, "mapping bitmap sector %lu to band %llu and hardware sector %llu", sec, band, band_sec);
+	lean_msg(s, KERN_DEBUG,
+		"mapping bitmap sector %lu to band %llu and hardware sector %llu",
+		sec, band, band_sec);
 	map_bh(bh_result, s, band_sec);
 	return 0;
 }
@@ -48,7 +51,7 @@ static int lean_write_bitmap_pages(struct address_space *mapping,
 
 static int lean_read_bitmap_pages(struct file *file,
 	struct address_space *mapping, struct list_head *pages,
-	unsigned nr_pages)
+	unsigned int nr_pages)
 {
 	return mpage_readpages(mapping, pages, nr_pages, lean_get_bitmap_block);
 }
@@ -83,12 +86,14 @@ struct lean_bitmap *lean_get_bitmap(struct super_block *s, uint64_t band)
 	struct page *page, *prev;
 	pgoff_t off = (band * sbi->bitmap_size * LEAN_SEC) >> PAGE_SHIFT;
 	unsigned int nr_pages = (sbi->bitmap_size * LEAN_SEC) >> PAGE_SHIFT;
+
 	nr_pages = nr_pages ? nr_pages : 1;
-	
 	bitmap->first = NULL;
 	prev = NULL;
 
-	lean_msg(s, KERN_DEBUG, "Reading %u pages from band %llu starting at page %lu", nr_pages, band, off);
+	lean_msg(s, KERN_DEBUG,
+		"Reading %u pages from band %llu starting at page %lu",
+		nr_pages, band, off);
 
 	for (i = 0; i < nr_pages; i++) {
 		page = read_mapping_page(mapping, off + i, NULL);
@@ -96,8 +101,9 @@ struct lean_bitmap *lean_get_bitmap(struct super_block *s, uint64_t band)
 			goto free_pages;
 		kmap(page);
 		if (i == 0) {
-			bitmap->start = page_address(page)
-				+ ((band * sbi->bitmap_size * LEAN_SEC) & ~PAGE_MASK);
+			bitmap->start = page_address(page) + (
+				(band * sbi->bitmap_size * LEAN_SEC)
+				& ~PAGE_MASK);
 		}
 		SetPagePrivate(page);
 		if (prev == NULL)

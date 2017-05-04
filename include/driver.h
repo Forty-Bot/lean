@@ -13,8 +13,9 @@ static inline struct lean_ino_info *LEAN_I(struct inode *inode)
 	return list_entry(inode, struct lean_ino_info, vfs_inode);
 }
 
-static inline unsigned LEAN_DT(enum lean_file_type type) {
-	switch(type) {
+static inline unsigned int LEAN_DT(enum lean_file_type type)
+{
+	switch (type) {
 	case LFT_REG:
 		return DT_REG;
 	case LFT_DIR:
@@ -36,7 +37,7 @@ struct lean_bitmap {
 /* super.c */
 struct inode *lean_inode_alloc(struct super_block *s);
 extern __printf(3, 4)
-void lean_msg(struct super_block *, const char *, const char *, ...);
+void lean_msg(struct super_block *s, const char *prefix, const char *fmt, ...);
 
 /* inode.c */
 struct inode *lean_iget(struct super_block *s, uint64_t ino);

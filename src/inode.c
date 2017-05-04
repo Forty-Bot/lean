@@ -16,7 +16,7 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 	uint64_t extent = li->extent_starts[i];
 	uint32_t size = li->extent_sizes[i];
 
-	if(sec > li->sector_count)
+	if (sec > li->sector_count)
 		return -ENXIO;
 	while (sec > size && i < LEAN_INODE_EXTENTS) {
 		extent = li->extent_starts[i];
@@ -38,7 +38,7 @@ static int lean_readpage(struct file *file, struct page *page)
 }
 
 static int lean_readpages(struct file *file, struct address_space *mapping,
-	struct list_head *pages, unsigned nr_pages)
+	struct list_head *pages, unsigned int nr_pages)
 {
 	return mpage_readpages(mapping, pages, nr_pages, lean_get_block);
 }
@@ -58,22 +58,23 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 	struct inode *inode;
 
 	inode = iget_locked(s, ino);
-	if (!inode) {
+	if (!inode)
 		return ERR_PTR(-ENOMEM);
-	}
+
 	/* This inode is cached */
 	if (!(inode->i_state & I_NEW))
 		return inode;
 	li = LEAN_I(inode);
-	
+
 	if (ino < sbi->root || ino > sbi->sectors_total) {
 		ret = -EINVAL;
 		goto bad_inode;
 	}
-	
-	if (!(bh = sb_bread(s, ino)))
+
+	bh = sb_bread(s, ino);
+	if (!bh)
 		goto bad_inode;
-	
+
 	raw = (struct lean_inode *) bh->b_data;
 	if (memcmp(raw->magic, LEAN_MAGIC_INODE, sizeof(raw->magic))) {
 		brelse(bh);
@@ -88,7 +89,7 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 	}
 
 	brelse(bh);
-	
+
 	inode->i_mode = li->attr & LIA_POSIX_MASK;
 	if (LIA_ISFMT_REG(li->attr))
 		inode->i_mode |= S_IFREG;
@@ -116,7 +117,7 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 	inode->i_mtime = lean_timespec(li->time_modify);
 	inode->i_size = li->size;
 	inode->i_blocks = li->sector_count;
-	
+
 	inode->i_mapping->a_ops = &lean_aops;
 	if (S_ISREG(inode->i_mode)) {
 		inode->i_op = &lean_file_inode_ops;
@@ -146,7 +147,7 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 
 	if (ino < sbi->root || ino > sbi->sectors_total)
 		return -EINVAL;
-	
+
 	li->attr = (li->attr & ~LIA_POSIX_MASK)
 		| (inode->i_mode & LIA_POSIX_MASK);
 	if (S_ISREG(inode->i_mode))
@@ -171,10 +172,11 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 	li->time_modify = lean_time(inode->i_mtime);
 	li->size = inode->i_size;
 	li->sector_count = inode->i_blocks;
-	
-	if (!(bh = sb_bread(s, ino)))
+
+	bh = sb_bread(s, ino)
+	if (!bh)
 		return -EIO;
-	
+
 	raw = (struct lean_inode *) bh->b_data;
 	lean_info_to_inode(li, raw);
 	mark_buffer_dirty(bh);

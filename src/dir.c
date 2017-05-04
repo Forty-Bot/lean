@@ -6,11 +6,10 @@
 #include <linux/string.h>
 #include <linux/pagemap.h>
 
-/* This is almost a line-for-line copy of ext2's dir.c
-   Should probably gpl this stuff :P */
-static unsigned lean_last_byte(struct inode *inode, unsigned long page_nr)
+/* Heavily influenced by fs/ext2/dir.c */
+static unsigned int lean_last_byte(struct inode *inode, unsigned long page_nr)
 {
-	unsigned last_byte = inode->i_size + sizeof(struct lean_inode);
+	unsigned int last_byte = inode->i_size + sizeof(struct lean_inode);
 
 	last_byte -= page_nr << PAGE_SHIFT;
 	if (last_byte > PAGE_SIZE)
@@ -22,13 +21,14 @@ static struct page *lean_get_page(struct inode *dir, unsigned long n)
 {
 	struct address_space *mapping = dir->i_mapping;
 	struct page *page = read_mapping_page(mapping, n, NULL);
-	
+
 	if (!IS_ERR(page))
 		kmap(page);
 	return page;
 }
 
-static void lean_put_page(struct page *page) {
+static void lean_put_page(struct page *page)
+{
 		kunmap(page);
 		put_page(page);
 }
@@ -43,14 +43,15 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 	unsigned long n = ctx->pos >> PAGE_SHIFT;
 	unsigned long npages = dir_pages(inode);
 	/* Skip the inode if the initial position is zero */
-	if(!ctx->pos)
+	if (!ctx->pos)
 		off += sizeof(struct lean_inode);
 
-	for(; n < npages; n++) {
+	for (; n < npages; n++) {
 		unsigned char *kaddr, *local_ptr;
 		struct lean_dir_entry *de;
 		struct page *page = (next) ? next : lean_get_page(inode, n);
 		uint16_t length;
+
 		next = NULL;
 		off -= PAGE_SIZE;
 
@@ -79,10 +80,10 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 					* sizeof(struct lean_dir_entry);
 				ctx->pos = off + n * PAGE_SIZE;
 				continue;
-			}	
-			
+			}
+
 			length = le16_to_cpu(de->name_length);
-			if (unlikely(!length)) {	
+			if (unlikely(!length)) {
 				lean_msg(s, KERN_ERR,
 					"zero-length directory name in inode %lu",
 					inode->i_ino);
@@ -96,8 +97,8 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 				lean_put_page(page);
 				return -EIO;
 			}
-			
-			if (unlikely(inode->i_size + sizeof(struct lean_inode) 
+
+			if (unlikely(inode->i_size + sizeof(struct lean_inode)
 				< off + de->entry_length
 				* sizeof(struct lean_dir_entry)
 				+ n * PAGE_SIZE)) {
@@ -108,16 +109,16 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 				return -EIO;
 			}
 
-			if (PAGE_SIZE > off
-				+ de->entry_length
-				* sizeof(struct lean_dir_entry)) {
+			if (off	+ de->entry_length
+				* sizeof(struct lean_dir_entry) < PAGE_SIZE) {
 				/* Everything fits in one page */
 				local_ptr = de->name;
 			} else {
 				/* We need to load the next page as well */
 				size_t remaining = kaddr + PAGE_SIZE - de->name;
+
 				local_ptr = kmalloc(length, GFP_NOFS);
-				if(!local_ptr) {
+				if (!local_ptr) {
 					lean_put_page(page);
 					return -ENOMEM;
 				}
@@ -151,7 +152,8 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 	return ret;
 }
 
-static int lean_iterate(struct file *file, struct dir_context *ctx) {
+static int lean_iterate(struct file *file, struct dir_context *ctx)
+{
 	return lean_readdir(file_inode(file), ctx);
 }
 
@@ -169,7 +171,7 @@ struct lean_filename_match {
 };
 
 static int lean_match(struct dir_context *ctx, const char *name, int len,
-	loff_t off, u64 ino, unsigned type)
+	loff_t off, u64 ino, unsigned int type)
 {
 	struct lean_filename_match *match = (struct lean_filename_match *) ctx;
 
@@ -184,7 +186,7 @@ static int lean_match(struct dir_context *ctx, const char *name, int len,
 }
 
 static struct dentry *lean_lookup(struct inode *dir, struct dentry *de,
-	unsigned flags)
+	unsigned int flags)
 {
 	int err;
 	ino_t ino;
@@ -200,7 +202,7 @@ static struct dentry *lean_lookup(struct inode *dir, struct dentry *de,
 		return ERR_PTR(-ENAMETOOLONG);
 
 	err = lean_readdir(dir, &match.ctx);
-	if(err)
+	if (err)
 		return ERR_PTR(err);
 	ino = match.ino;
 

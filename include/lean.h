@@ -2,7 +2,8 @@
 #define LEANFS_H
 
 /* Initialize some equivalent types so we can use this include in both user and
- * kernel space */
+ * kernel space
+ */
 #ifdef __KERNEL__
 #include <linux/types.h>
 #include <linux/fs.h>
@@ -17,6 +18,7 @@ struct lean_bitmap;
 #define le16 uint16_t
 #define le32 uint32_t
 #define le64 uint64_t
+#define __packed __attribute__((__packed__))
 #endif /* __KERNEL__ */
 
 #define LEAN_VERSION_MAJOR 0x00
@@ -34,7 +36,7 @@ static const uint8_t LEAN_MAGIC_INODE[] = { 'N', 'O', 'D', 'E' };
 struct lean_superblock {
 	le32 checksum;
 	uint8_t magic[4]; /* Must be LEAN_MAGIC_SUPERBLOCK */
-	uint8_t fs_version_major; /* Should be LEAN_VERSION; others unsupported */
+	uint8_t fs_version_major; /* Should be LEAN_VERSION */
 	uint8_t fs_version_minor;
 	uint8_t prealloc; /* Extra sectors to allocate minus one */
 	uint8_t log2_band_sectors; /* Number of sectors stored in each band */
@@ -49,12 +51,12 @@ struct lean_superblock {
 	le64 root; /* Inode of the root dir */
 	le64 bad; /* Inode of a file consisting of bad sectors */
 	uint8_t reserved[360];
-} __attribute__((packed));
+} __packed;
 
 /*
  * Superblock info in memory
  */
-struct lean_sb_info { 
+struct lean_sb_info {
 	uint8_t prealloc; /* Extra sectors to allocate */
 	uint8_t log2_band_sectors;
 	uint8_t uuid[16];
@@ -77,7 +79,7 @@ struct lean_sb_info {
 #endif
 };
 
-/* 
+/*
  * Number of extents in an indirect
  */
 #define LEAN_INDIRECT_EXTENTS 38
@@ -91,14 +93,14 @@ struct lean_indirect {
 	uint64_t sector_count; /* Total amount of sectors in this index */
 	uint64_t inode; /* Inode this indirect belongs to */
 	uint64_t sector; /* The sector this indirect is in */
-	uint64_t prev; 
+	uint64_t prev;
 	uint64_t next;
 	uint8_t extent_count; /* Total extents in this indirect */
 	uint8_t reserved[7];
 	/* Extents are split into two arrays for alignment */
 	uint64_t extent_starts[LEAN_INDIRECT_EXTENTS];
 	uint32_t extent_sizes[LEAN_INDIRECT_EXTENTS];
-} __attribute__((packed));
+} __packed;
 
 /*
  * Number of extents in an inode
@@ -130,7 +132,7 @@ struct lean_inode {
 	le64 fork; /* Inode of fork, if existing */
 	le64 extent_starts[LEAN_INODE_EXTENTS];
 	le32 extent_sizes[LEAN_INODE_EXTENTS];
-} __attribute__((packed));
+} __packed;
 
 /*
  * Inode info in memory
@@ -175,7 +177,7 @@ enum lean_inode_attr {
 	LIA_XUSR = 1 << 6,
 	LIA_RGRP = 1 << 5,
 	LIA_WGRP = 1 << 4,
-	LIA_XGRP = 1 << 3,	
+	LIA_XGRP = 1 << 3,
 	LIA_ROTH = 1 << 2,
 	LIA_WOTH = 1 << 1,
 	LIA_XOTH = 1 << 0,
@@ -190,7 +192,7 @@ enum lean_inode_attr {
 	LIA_SYNC = 1 << 15, /* Writes must be committed immediately */
 	LIA_NOATIME = 1 << 16, /* Do not update access time */
 	LIA_IMMUTABLE = 1 << 17, /* Do not move file sectors */
-	/* Keep preallocated sectors beyond inode.size after file is closed */	
+	/* Keep preallocated sectors beyond inode.size after file is closed */
 	LIA_PREALLOC = 1 << 18,
 	LIA_INLINE = 1 << 19, /* Inline extended attributes in first sector */
 	/* Filetype attributes */
@@ -205,7 +207,7 @@ enum lean_inode_attr {
 #define LIA_ISFMT_DIR(a) (((a) & LIA_FMT_DIR) == LIA_FMT_DIR)
 #define LIA_ISFMT_SYM(a) (((a) & LIA_FMT_SYM) == LIA_FMT_SYM)
 
-/* 
+/*
  * A 16-byte entry for a file in a directory
  * dir_entry.name may be longer or shorter than 4 bytes
  * However, the structure must be aligned to 16 bytes
@@ -216,11 +218,11 @@ struct lean_dir_entry {
 	uint8_t entry_length; /* Length of the entry in 16-byte chunks */
 	le16 name_length; /* Length of the name; may be other than 4 */
 	uint8_t name[4]; /* May be larger or smaller than 4 */
-} __attribute__((packed));
+} __packed;
 
 #define LEAN_DIR_NAME_MAX (256 * 16 - 12)
 
-/* 
+/*
  * File type used in dir_entry
  * Analogous to IA_FMT
  */
@@ -232,12 +234,15 @@ enum lean_file_type {
 };
 
 /* Time helper functions */
-static inline uint64_t lean_time(struct timespec ts) {
+static inline uint64_t lean_time(struct timespec ts)
+{
 	return (ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
 }
 
-static inline struct timespec lean_timespec(int64_t time) {
+static inline struct timespec lean_timespec(int64_t time)
+{
 	struct timespec ts;
+
 	ts.tv_sec = time / 1000000;
 	ts.tv_nsec = (time % 1000000) * 1000;
 	return ts;
@@ -245,14 +250,12 @@ static inline struct timespec lean_timespec(int64_t time) {
 
 /* util.c */
 #define WRONG_CHECKSUM 1
-uint32_t lean_checksum(const void* data, size_t size);
-int lean_superblock_to_info(const struct lean_superblock *sb, \
+uint32_t lean_checksum(const void *data, size_t size);
+int lean_superblock_to_info(const struct lean_superblock *sb,
 	struct lean_sb_info *sbi);
-void lean_info_to_superblock(const struct lean_sb_info *sbi, \
+void lean_info_to_superblock(const struct lean_sb_info *sbi,
 	struct lean_superblock *sb);
-int lean_inode_to_info(const struct lean_inode *li, \
-	struct lean_ino_info *ii);
-void lean_info_to_inode(const struct lean_ino_info *ii, \
-	struct lean_inode *li);
+int lean_inode_to_info(const struct lean_inode *li, struct lean_ino_info *ii);
+void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li);
 
 #endif // LEANFS_H

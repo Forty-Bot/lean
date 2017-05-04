@@ -13,28 +13,29 @@
 /* Taken from fs/ext2/super.c */
 void lean_msg(struct super_block *s, const char *prefix, const char *fmt, ...)
 {
-        struct va_format vaf;
-        va_list args;
+	struct va_format vaf;
+	va_list args;
 
-        va_start(args, fmt);
+	va_start(args, fmt);
 
-        vaf.fmt = fmt;
-        vaf.va = &args;
+	vaf.fmt = fmt;
+	vaf.va = &args;
 
-        printk("%slean (%s): %pV\n", prefix, s->s_id, &vaf);
+	printk("%slean (%s): %pV\n", prefix, s->s_id, &vaf);
 
-        va_end(args);
+	va_end(args);
 }
 
+#undef __LEAN_TESTING
 static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 {
 	struct lean_sb_info *sbi = (struct lean_sb_info *) de->d_sb->s_fs_info;
 	uint64_t fsid;
-	/* TESTING */
-	/*int i;
+#ifdef __LEAN_TESTING
+	int i;
 	struct page *page;
-	struct lean_bitmap *bitmap;*/
-
+	struct lean_bitmap *bitmap;
+#endif /* __LEAN_TESTING */
 	strncpy((void *) &buf->f_type,
 		LEAN_MAGIC_SUPERBLOCK, sizeof(buf->f_type));
 	buf->f_bsize = buf->f_frsize = 512;
@@ -51,7 +52,9 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 	buf->f_flags = de->d_sb->s_flags;
 
 	/* TESTING... */
-	/*lean_msg(de->d_sb, KERN_ERR, "bs %llu bc %llu bms %llu", sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
+	lean_msg(de->d_sb, KERN_ERR, "bs %llu bc %llu bms %llu",
+		sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
+#if __LEAN_TESTING
 	for (i = 0; i < sbi->band_count; i++) {
 		lean_msg(de->d_sb, KERN_ERR, "getting bitmap %i", i);
 		bitmap = lean_get_bitmap(de->d_sb, i);
@@ -60,11 +63,13 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 			lean_msg(de->d_sb, KERN_ERR, "invalid bitmap!");
 			continue;
 		}
-		print_hex_dump_bytes("lean: ", DUMP_PREFIX_NONE, bitmap->start, LEAN_SEC);
+		print_hex_dump_bytes("lean: ", DUMP_PREFIX_NONE,
+			bitmap->start, LEAN_SEC);
 		lean_msg(de->d_sb, KERN_ERR, "putting bitmap %i", i);
 		lean_put_bitmap(bitmap);
 		lean_msg(de->d_sb, KERN_ERR, "put bitmap %i", i);
-	}*/
+	}
+#endif /* __LEAN_TESTING */
 
 	return 0;
 }
@@ -72,7 +77,7 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 static void lean_put_super(struct super_block *s)
 {
 	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
-	
+
 	/* TODO: Write sb to disk before destroying it */
 	brelse(sbi->sbh);
 	s->s_fs_info = NULL;
@@ -83,15 +88,17 @@ static struct kmem_cache *lean_inode_cache;
 
 struct inode *lean_inode_alloc(struct super_block *s)
 {
-	struct lean_ino_info *inode;
-	inode = kmem_cache_alloc(lean_inode_cache, GFP_KERNEL);
+	struct lean_ino_info *inode =
+		kmem_cache_alloc(lean_inode_cache, GFP_KERNEL);
 	if (!inode)
 		return NULL;
 	return &inode->vfs_inode;
 }
 
-static void lean_free_callback(struct rcu_head *head) {
+static void lean_free_callback(struct rcu_head *head)
+{
 	struct inode *inode = container_of(head, struct inode, i_rcu);
+
 	kmem_cache_free(lean_inode_cache, LEAN_I(inode));
 }
 
@@ -103,6 +110,7 @@ static void lean_inode_free(struct inode *inode)
 static void lean_inode_init_once(void *i)
 {
 	struct lean_ino_info *inode = (struct lean_ino_info *) i;
+
 	inode_init_once(&inode->vfs_inode);
 }
 
@@ -131,13 +139,13 @@ static struct super_operations const lean_super_ops = {
 	.statfs = lean_statfs,
 	.show_options = generic_show_options
 };
-	
+
 static int lean_fill_super(struct super_block *s, void *data, int silent)
 {
 #define lean_msg(s, prefix, fmt, ...) \
-if (!silent) { \
-	lean_msg(s, prefix, fmt, ##__VA_ARGS__); \
-}
+	if (!silent) { \
+		lean_msg(s, prefix, fmt, ##__VA_ARGS__); \
+	}
 
 	bool found_sb = false;
 	int ret = -EINVAL;
@@ -148,16 +156,15 @@ if (!silent) { \
 	struct lean_sb_info *sbi = kmalloc(sizeof(struct lean_sb_info),
 		GFP_KERNEL);
 
-	if (!sbi) {
+	if (!sbi)
 		return -ENOMEM;
-	}
 
-	if(!sb_set_blocksize(s, 512)) {
+	if (!sb_set_blocksize(s, 512)) {
 		lean_msg(s, KERN_ERR, "cannot set block size of dev %s to 512",
 			s->s_id);
 		goto failure;
 	}
-	
+
 	/* Try to read the superblock off sectors 1-32 */
 	for (sec = 1; !found_sb && sec <= 32; sec++) {
 		bh = sb_bread(s, sec);
@@ -169,7 +176,7 @@ if (!silent) { \
 			goto failure;
 		} else {
 			sb = (struct lean_superblock *) bh->b_data;
-			if (!memcmp(sb->magic, LEAN_MAGIC_SUPERBLOCK, 
+			if (!memcmp(sb->magic, LEAN_MAGIC_SUPERBLOCK,
 				sizeof(sb->magic)))
 				found_sb = true;
 			else
@@ -185,12 +192,12 @@ if (!silent) { \
 	}
 
 	lean_msg(s, KERN_INFO, "found superblock at sector %d", sec);
-	
+
 	save_mount_options(s, data);
 
 	s->s_magic = le32_to_cpup((__le32 *) sb->magic);
-	if (sb->fs_version_major != LEAN_VERSION_MAJOR || \
-		sb->fs_version_minor != LEAN_VERSION_MINOR) {
+	if (sb->fs_version_major != LEAN_VERSION_MAJOR
+		|| sb->fs_version_minor != LEAN_VERSION_MINOR) {
 		lean_msg(s, KERN_ERR, "unsupported version %u.%u",
 			sb->fs_version_major, sb->fs_version_minor);
 		goto bh_failure;
@@ -204,19 +211,20 @@ if (!silent) { \
 		goto bh_failure;
 	}
 	if (sbi->super_primary != sec) {
-		lean_msg(s, KERN_ERR, "inconsistant superblock");
+		lean_msg(s, KERN_ERR, "inconsistent superblock");
 		goto bh_failure;
 	}
 	/* The lower limit is spec specified (must use at least one sector for
 	 * each bitmap chunk). The upper limit is so we can store the number of
-	 * free sectors as a signed 32-bit integer */
+	 * free sectors as a signed 32-bit integer
+	 */
 	if (sbi->log2_band_sectors < 12 || sbi->log2_band_sectors > 31) {
 		lean_msg(s, KERN_ERR,
 			"invalid number of sectors per band: %llu",
 			sbi->band_sectors);
 		goto bh_failure;
 	}
-	
+
 	/* We need to allocate the bitmap inode before we set s_op */
 	sbi->bitmap = new_inode(s);
 	if (!sbi->bitmap) {
@@ -230,40 +238,40 @@ if (!silent) { \
 	sbi->bitmap->i_mapping->a_ops = &lean_bitmap_aops;
 	mapping_set_gfp_mask(sbi->bitmap->i_mapping, GFP_NOFS);
 
-	sbi->bitmap_cache = kzalloc(sizeof(struct lean_bitmap) * sbi->band_count,
+	sbi->bitmap_cache = kcalloc(sbi->band_count, sizeof(struct lean_bitmap),
 		GFP_KERNEL);
 
 	sbi->sbh = bh;
 	s->s_fs_info = sbi;
 	s->s_op = &lean_super_ops;
-	
+
 	memcpy(s->s_uuid, sbi->uuid, sizeof(s->s_uuid));
 	strncpy(s->s_id, sbi->volume_label, sizeof(s->s_id));
 	s->s_id[31] = '\0';
 
 	s->s_time_gran = 1000;
-	
+
 	root = lean_iget(s, sbi->root);
-	if(IS_ERR(root)) {
+	if (IS_ERR(root)) {
 		ret = PTR_ERR(root);
 		lean_msg(s, KERN_ERR, "error reading root inode:");
 		goto bh_failure;
 	}
-	if(!S_ISDIR(root->i_mode) || !root->i_blocks || !root->i_size) {
+	if (!S_ISDIR(root->i_mode) || !root->i_blocks || !root->i_size) {
 		lean_msg(s, KERN_ERR, "corrupt root inode");
 		iput(root);
 		goto bh_failure;
 	}
 
 	s->s_root = d_make_root(root);
-	if(!s->s_root) {
+	if (!s->s_root) {
 		lean_msg(s, KERN_ERR, "get root inode failed");
 		ret = -ENOMEM;
 		goto bh_failure;
 	}
 
 	return 0;
-		
+
 bh_failure:
 	brelse(bh);
 failure:
@@ -277,7 +285,7 @@ static struct dentry *lean_mount(struct file_system_type *fs_type, int flags,
 {
 	return mount_bdev(fs_type, flags, dev_name, data, lean_fill_super);
 }
- 
+
 
 static struct file_system_type lean_fs_type = {
 	.owner = THIS_MODULE,
@@ -289,11 +297,11 @@ static struct file_system_type lean_fs_type = {
 
 static int __init lean_init(void)
 {
-	int err;
-	err = lean_init_inodecache();
+	int err = lean_init_inodecache();
+
 	if (err)
 		return err;
-	
+
 	err = register_filesystem(&lean_fs_type);
 	if (err) {
 		lean_destroy_inodecache();
