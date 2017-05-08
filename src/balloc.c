@@ -4,6 +4,7 @@
 #include <linux/buffer_head.h>
 #include <linux/mpage.h>
 #include <linux/pagemap.h>
+#include <linux/slab.h>
 
 /* We map the entire bitmap to a contiguous address_space
  * This avoid dealing with bios or buffer_heads ourselves
@@ -25,9 +26,6 @@ static int lean_get_bitmap_block(struct inode *inode, sector_t sec,
 	if (band == 0)
 		band_sec += sbi->bitmap_start;
 
-	lean_msg(s, KERN_DEBUG,
-		"mapping bitmap sector %lu to band %llu and hardware sector %llu",
-		sec, band, band_sec);
 	map_bh(bh_result, s, band_sec);
 	return 0;
 }
@@ -63,58 +61,82 @@ const struct address_space_operations lean_bitmap_aops = {
 	.readpages = lean_read_bitmap_pages
 };
 
-void lean_put_bitmap(struct lean_bitmap *bitmap)
+void lean_bitmap_put(struct lean_bitmap *bitmap)
 {
+	int i;
 	struct page *page;
 
-	for (page = bitmap->first;
-		page != NULL;
-		page = (struct page *) page->private) {
-		pr_debug("lean: freeing page %lu\n", page->index);
-		ClearPagePrivate(page);
-		kunmap(page);
+	for (i = 0; i < bitmap->count; i++) {
+		page = bitmap->pages[i];
 		put_page(page);
 	}
 }
 
-struct lean_bitmap *lean_get_bitmap(struct super_block *s, uint64_t band)
+struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band)
 {
 	int i;
 	struct lean_sb_info *sbi = s->s_fs_info;
-	struct lean_bitmap *bitmap = &sbi->bitmap_cache[band];
+	struct lean_bitmap *bitmap = ((void *) sbi->bitmap_cache)
+		+ band * LEAN_BITMAP_SIZE(sbi);
 	struct address_space *mapping = sbi->bitmap->i_mapping;
-	struct page *page, *prev;
+	struct page *page;
+	unsigned int nr_pages = LEAN_BITMAP_PAGES(sbi);
 	pgoff_t off = (band * sbi->bitmap_size * LEAN_SEC) >> PAGE_SHIFT;
-	unsigned int nr_pages = (sbi->bitmap_size * LEAN_SEC) >> PAGE_SHIFT;
+	bitmap->off = (band * sbi->bitmap_size * LEAN_SEC) & ~PAGE_MASK;
 
-	nr_pages = nr_pages ? nr_pages : 1;
-	bitmap->first = NULL;
-	prev = NULL;
-
-	lean_msg(s, KERN_DEBUG,
-		"Reading %u pages from band %llu starting at page %lu",
-		nr_pages, band, off);
-
+	lean_msg(s, KERN_DEBUG, "bitmap = %p", bitmap);
 	for (i = 0; i < nr_pages; i++) {
 		page = read_mapping_page(mapping, off + i, NULL);
 		if (IS_ERR(page))
 			goto free_pages;
-		kmap(page);
-		if (i == 0) {
-			bitmap->start = page_address(page) + (
-				(band * sbi->bitmap_size * LEAN_SEC)
-				& ~PAGE_MASK);
+		
+		lean_msg(s, KERN_DEBUG, "off = %lu bitmap->pages[%d] = %p, page = %p",
+				off, i, bitmap->pages[i], page);
+		if (bitmap->pages[i] == NULL) {
+			bitmap->pages[i] = page;
+			bitmap->count++;
 		}
-		SetPagePrivate(page);
-		if (prev == NULL)
-			bitmap->first = page;
-		else
-			prev->private = (unsigned long) page;
-		prev = page;
-		prev->private = (unsigned long) NULL;
 	}
+	BUG_ON(bitmap->count != nr_pages); 
 	return bitmap;
 free_pages:
-	lean_put_bitmap(bitmap);
+	lean_bitmap_put(bitmap);
 	return ERR_CAST(page);
+}
+
+int lean_bitmap_cache_init(struct super_block *s)
+{
+	struct lean_sb_info *sbi = s->s_fs_info;
+
+	/* Allocate an array to hold the bitmap
+	 * Each lean_bitmap has an array of pages on the end
+	 */
+	sbi->bitmap_cache = kcalloc(sbi->band_count, LEAN_BITMAP_SIZE(sbi),
+		GFP_KERNEL);
+	if (!sbi->bitmap_cache)
+		return -ENOMEM;
+
+	sbi->bitmap = new_inode(s);
+	if (!sbi->bitmap)
+		goto error;
+	sbi->bitmap->i_flags = S_PRIVATE;
+	set_nlink(sbi->bitmap, 1);
+	sbi->bitmap->i_size = sbi->sectors_total >> 3;
+	sbi->bitmap->i_blocks = sbi->sectors_total >> 12;
+	sbi->bitmap->i_mapping->a_ops = &lean_bitmap_aops;
+	mapping_set_gfp_mask(sbi->bitmap->i_mapping, GFP_NOFS);
+
+	return 0;
+
+error:
+	kfree(sbi->bitmap_cache);
+	return -ENOMEM;
+}
+
+void lean_bitmap_cache_destroy(struct super_block *s)
+{
+	struct lean_sb_info *sbi = s->s_fs_info;
+
+	iput(sbi->bitmap);
+	kfree(sbi->bitmap_cache);
 }

@@ -1,6 +1,7 @@
 #include "driver.h"
 #include "lean.h"
 
+#include <linux/backing-dev-defs.h>
 #include <linux/buffer_head.h>
 #include <linux/err.h>
 #include <linux/errno.h>
@@ -21,19 +22,19 @@ void lean_msg(struct super_block *s, const char *prefix, const char *fmt, ...)
 	vaf.fmt = fmt;
 	vaf.va = &args;
 
-	printk("%slean (%s): %pV\n", prefix, s->s_id, &vaf);
+	printk("%slean (%s): %pV", prefix, s->s_id, &vaf);
 
 	va_end(args);
 }
 
-#undef __LEAN_TESTING
+#undef LEAN_TESTING
 static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 {
 	struct lean_sb_info *sbi = (struct lean_sb_info *) de->d_sb->s_fs_info;
 	uint64_t fsid;
-#ifdef __LEAN_TESTING
+#ifdef LEAN_TESTING
 	int i;
-	struct page *page;
+	char *kaddr;
 	struct lean_bitmap *bitmap;
 #endif /* __LEAN_TESTING */
 	strncpy((void *) &buf->f_type,
@@ -51,23 +52,20 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 	buf->f_namelen = LEAN_DIR_NAME_MAX;
 	buf->f_flags = de->d_sb->s_flags;
 
-	/* TESTING... */
-	lean_msg(de->d_sb, KERN_ERR, "bs %llu bc %llu bms %llu",
+#ifdef LEAN_TESTING
+	lean_msg(de->d_sb, KERN_DEBUG, "bs %llu bc %llu bms %llu",
 		sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
-#if __LEAN_TESTING
-	for (i = 0; i < sbi->band_count; i++) {
-		lean_msg(de->d_sb, KERN_ERR, "getting bitmap %i", i);
-		bitmap = lean_get_bitmap(de->d_sb, i);
-		lean_msg(de->d_sb, KERN_ERR, "got bitmap %i", i);
+	for (i = 0; i < (sbi->band_count < 10 ? sbi->band_count : 10); i++) {
+		bitmap = lean_bitmap_get(de->d_sb, i);
 		if (IS_ERR(bitmap)) {
 			lean_msg(de->d_sb, KERN_ERR, "invalid bitmap!");
 			continue;
 		}
+		kaddr = kmap(bitmap->pages[0]);
 		print_hex_dump_bytes("lean: ", DUMP_PREFIX_NONE,
-			bitmap->start, LEAN_SEC);
-		lean_msg(de->d_sb, KERN_ERR, "putting bitmap %i", i);
-		lean_put_bitmap(bitmap);
-		lean_msg(de->d_sb, KERN_ERR, "put bitmap %i", i);
+			kaddr + bitmap->off, LEAN_SEC);
+		kunmap(bitmap->pages[0]);
+		lean_bitmap_put(bitmap);
 	}
 #endif /* __LEAN_TESTING */
 
@@ -78,6 +76,8 @@ static void lean_put_super(struct super_block *s)
 {
 	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
 
+	lean_bitmap_cache_destroy(s);
+	
 	/* TODO: Write sb to disk before destroying it */
 	brelse(sbi->sbh);
 	s->s_fs_info = NULL;
@@ -225,31 +225,16 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 		goto bh_failure;
 	}
 
-	/* We need to allocate the bitmap inode before we set s_op */
-	sbi->bitmap = new_inode(s);
-	if (!sbi->bitmap) {
-		ret = -ENOMEM;
-		goto bh_failure;
-	}
-	sbi->bitmap->i_flags = S_PRIVATE;
-	set_nlink(sbi->bitmap, 1);
-	sbi->bitmap->i_size = sbi->sectors_total >> 3;
-	sbi->bitmap->i_blocks = sbi->sectors_total >> 12;
-	sbi->bitmap->i_mapping->a_ops = &lean_bitmap_aops;
-	mapping_set_gfp_mask(sbi->bitmap->i_mapping, GFP_NOFS);
-
-	sbi->bitmap_cache = kcalloc(sbi->band_count, sizeof(struct lean_bitmap),
-		GFP_KERNEL);
-
 	sbi->sbh = bh;
 	s->s_fs_info = sbi;
 	s->s_op = &lean_super_ops;
 
-	memcpy(s->s_uuid, sbi->uuid, sizeof(s->s_uuid));
-	strncpy(s->s_id, sbi->volume_label, sizeof(s->s_id));
-	s->s_id[31] = '\0';
+	ret = lean_bitmap_cache_init(s);
+	if (ret)
+		goto bh_failure;
 
 	s->s_time_gran = 1000;
+	s->s_maxbytes = MAX_LFS_FILESIZE;
 
 	root = lean_iget(s, sbi->root);
 	if (IS_ERR(root)) {

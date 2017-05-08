@@ -43,7 +43,7 @@ static int lean_readpages(struct file *file, struct address_space *mapping,
 	return mpage_readpages(mapping, pages, nr_pages, lean_get_block);
 }
 
-const struct address_space_operations lean_aops = {
+static const struct address_space_operations lean_aops = {
 	.readpage = lean_readpage,
 	.readpages = lean_readpages
 };
@@ -173,7 +173,7 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 	li->size = inode->i_size;
 	li->sector_count = inode->i_blocks;
 
-	bh = sb_bread(s, ino)
+	bh = sb_bread(s, ino);
 	if (!bh)
 		return -EIO;
 
