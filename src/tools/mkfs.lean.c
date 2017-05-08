@@ -10,24 +10,47 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 #include <uuid/uuid.h>
 
+int write_at_sector_mmap(int fd, uint64_t sec, const void *buf, size_t n)
+{
+	static int mmap_fd = -1;
+	static void *mmap_addr;
+	off_t length;
+
+	if (fd != mmap_fd) {
+		length = lseek(fd, 0L, SEEK_END);
+		if (length < 0)
+			return -1;
+		
+		mmap_addr = mmap(NULL, length, PROT_WRITE, MAP_SHARED, fd, 0);
+		if (mmap_addr == MAP_FAILED)
+			return -1;
+
+		mmap_fd = fd;
+	}
+
+	memcpy(mmap_addr + sec * LEAN_SEC, buf, n);
+	return 0;
+}
+
 /*
  * Writes n bytes of data stored in buf to a sector on fd
  * Returns 0 on success, -1 on system failure, and -2 on write failure
  * errno may contain the error on failure
  */
-int write_at_sector(int fd, uint64_t sec, const void *buf, size_t n)
+int write_at_sector_seek(int fd, uint64_t sec, const void *buf, size_t n)
 {
 	int ret = 0; /* Our return value */
 	int err_save = 0; /* A saved value of errno */
 	ssize_t wr; /* Return value of write() */
 
-	if (lseek(fd, sec * 512, SEEK_SET) < 0) {
+	if (lseek(fd, sec * LEAN_SEC, SEEK_SET) < 0) {
 		err_save = errno;
 		ret = -1;
 		goto end;
@@ -55,6 +78,8 @@ end:
 	errno = err_save;
 	return ret;
 }
+
+#define write_at_sector write_at_sector_mmap
 
 /*
  * Set the first n bits of a bitmap to 1
@@ -260,9 +285,9 @@ int parse_long(const char *str, long *n)
 }
 
 const char help_msg[] =
-"Usage: mkfs.lean [OPTIONS]... device\n"
+"Usage: mkfs.lean [OPTION]... DEVICE\n"
 "Format a disk as a lean filesystem\n"
-"Options:\n"
+"OPTIONS:\n"
 "\t-b sectors-per-band\n"
 "\t-f superblock-offset\n"
 "\t-n volume-label\n"
