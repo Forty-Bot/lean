@@ -4,7 +4,6 @@
 #include "lean.h"
 
 #include <linux/fs.h>
-#include <linux/kref.h>
 
 /*
  * Extract a struct lean_ino_info from a struct inode
@@ -33,11 +32,13 @@ static inline unsigned int LEAN_DT(enum lean_file_type type)
 		>> PAGE_SHIFT)
 #define LEAN_BITMAP_SIZE(sbi) (sizeof(struct lean_bitmap) \
 		+ LEAN_BITMAP_PAGES(sbi) * sizeof(struct page *))
+#define LEAN_BITMAP(sbi, band) (((void *) sbi->bitmap_cache) \
+		+ band * LEAN_BITMAP_SIZE(sbi))
 
 struct lean_bitmap {
+	struct mutex lock;
+	uint32_t off;
 	uint32_t free;
-	uint32_t count;
-	ptrdiff_t off;
 	struct page *pages[];
 };
 
@@ -61,8 +62,11 @@ extern const struct inode_operations lean_dir_inode_ops;
 
 /* balloc.c */
 extern const struct address_space_operations lean_bitmap_aops;
-void lean_bitmap_put(struct lean_bitmap *bitmap);
+void __lean_bitmap_put(struct lean_bitmap *bitmap, int count);
+#define lean_bitmap_put(sbi, bitmap) \
+	__lean_bitmap_put(bitmap, LEAN_BITMAP_PAGES(sbi))
 struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band);
+int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap);
 int lean_bitmap_cache_init(struct super_block *s);
 void lean_bitmap_cache_destroy(struct super_block *s);
 

@@ -3,6 +3,7 @@
 
 #include <linux/buffer_head.h>
 #include <linux/mpage.h>
+#include <linux/mutex.h>
 #include <linux/pagemap.h>
 #include <linux/slab.h>
 
@@ -61,12 +62,12 @@ const struct address_space_operations lean_bitmap_aops = {
 	.readpages = lean_read_bitmap_pages
 };
 
-void lean_bitmap_put(struct lean_bitmap *bitmap)
+void __lean_bitmap_put(struct lean_bitmap *bitmap, int count)
 {
 	int i;
 	struct page *page;
 
-	for (i = 0; i < bitmap->count; i++) {
+	for (i = 0; i < count; i++) {
 		page = bitmap->pages[i];
 		put_page(page);
 	}
@@ -76,36 +77,74 @@ struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band)
 {
 	int i;
 	struct lean_sb_info *sbi = s->s_fs_info;
-	struct lean_bitmap *bitmap = ((void *) sbi->bitmap_cache)
-		+ band * LEAN_BITMAP_SIZE(sbi);
+	struct lean_bitmap *bitmap = LEAN_BITMAP(sbi, band);
 	struct address_space *mapping = sbi->bitmap->i_mapping;
 	struct page *page;
 	unsigned int nr_pages = LEAN_BITMAP_PAGES(sbi);
 	pgoff_t off = (band * sbi->bitmap_size * LEAN_SEC) >> PAGE_SHIFT;
 	bitmap->off = (band * sbi->bitmap_size * LEAN_SEC) & ~PAGE_MASK;
 
-	lean_msg(s, KERN_DEBUG, "bitmap = %p", bitmap);
 	for (i = 0; i < nr_pages; i++) {
 		page = read_mapping_page(mapping, off + i, NULL);
 		if (IS_ERR(page))
 			goto free_pages;
-		
-		lean_msg(s, KERN_DEBUG, "off = %lu bitmap->pages[%d] = %p, page = %p",
-				off, i, bitmap->pages[i], page);
-		if (bitmap->pages[i] == NULL) {
-			bitmap->pages[i] = page;
-			bitmap->count++;
-		}
+	
+		BUG_ON(!(bitmap->pages[i] == NULL || bitmap->pages[i] == page));
+		bitmap->pages[i] = page;
 	}
-	BUG_ON(bitmap->count != nr_pages); 
 	return bitmap;
 free_pages:
-	lean_bitmap_put(bitmap);
+	__lean_bitmap_put(bitmap, i);
 	return ERR_CAST(page);
+}
+
+/*
+ * Populates bitmap->size
+ * returns 0 on success
+ */
+int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
+{
+	int err, i;
+	struct page *page;
+	struct lean_sb_info *sbi = s->s_fs_info;
+	uint32_t used = 0;
+	long *addr;
+	uint64_t off = bitmap->off;
+	
+	/* size should never be returned to an uninitialized state,
+	 * so we can safely check against it without the lock
+	 */
+	if (bitmap->free != U32_MAX)
+		return 0;
+
+	err = mutex_lock_interruptible(&bitmap->lock);
+	if (err)
+		return err;
+
+	/* Check to see no one has updated the size while we've been waiting */
+	if (bitmap->free != U32_MAX)
+		return 0;
+
+	for (i = 0; i < LEAN_BITMAP_PAGES(sbi); i++, off = 0) {
+		page = bitmap->pages[i];
+		if (!page)
+			return -EINVAL;
+
+		addr = kmap(page);
+		while (off < PAGE_SIZE && off < bitmap->off + LEAN_BITMAP_SIZE(sbi))
+			used += hweight_long(*(addr + off++));
+		kunmap(page);
+	}
+	
+	bitmap->free = sbi->band_sectors - used;
+	mutex_unlock(&bitmap->lock);
+	return 0;
 }
 
 int lean_bitmap_cache_init(struct super_block *s)
 {
+	int i;
+	struct lean_bitmap *bitmap;
 	struct lean_sb_info *sbi = s->s_fs_info;
 
 	/* Allocate an array to hold the bitmap
@@ -115,6 +154,12 @@ int lean_bitmap_cache_init(struct super_block *s)
 		GFP_KERNEL);
 	if (!sbi->bitmap_cache)
 		return -ENOMEM;
+
+	for (i = 0; i < sbi->band_count; i ++) {
+		bitmap = LEAN_BITMAP(sbi, i);
+		mutex_init(&bitmap->lock);
+		bitmap->free = U32_MAX;
+	}
 
 	sbi->bitmap = new_inode(s);
 	if (!sbi->bitmap)

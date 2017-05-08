@@ -75,6 +75,7 @@ struct lean_sb_info {
 #ifdef __KERNEL__
 	struct inode *bitmap;
 	struct lean_bitmap *bitmap_cache;
+	struct page **bitmap_pages;
 	spinlock_t bitmap_lock;
 	struct buffer_head *sbh;
 #endif
