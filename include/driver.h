@@ -34,11 +34,13 @@ static inline unsigned int LEAN_DT(enum lean_file_type type)
 		+ LEAN_BITMAP_PAGES(sbi) * sizeof(struct page *))
 #define LEAN_BITMAP(sbi, band) (((void *) sbi->bitmap_cache) \
 		+ band * LEAN_BITMAP_SIZE(sbi))
+#define LEAN_ROUND_PAGE(s) ((s + ~PAGE_MASK) & PAGE_MASK)
 
 struct lean_bitmap {
 	struct mutex lock;
 	uint32_t off;
 	uint32_t free;
+	uint32_t len;
 	struct page *pages[];
 };
 
@@ -64,7 +66,7 @@ extern const struct inode_operations lean_dir_inode_ops;
 extern const struct address_space_operations lean_bitmap_aops;
 void __lean_bitmap_put(struct lean_bitmap *bitmap, int count);
 #define lean_bitmap_put(sbi, bitmap) \
-	__lean_bitmap_put(bitmap, LEAN_BITMAP_PAGES(sbi))
+	__lean_bitmap_put((bitmap), LEAN_ROUND_PAGE((bitmap)->len) >> PAGE_SHIFT)
 struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band);
 int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap);
 int lean_bitmap_cache_init(struct super_block *s);

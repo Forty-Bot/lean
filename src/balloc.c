@@ -17,8 +17,7 @@ static int lean_get_bitmap_block(struct inode *inode, sector_t sec,
 	struct lean_sb_info *sbi = s->s_fs_info;
 	uint64_t band = sec / sbi->bitmap_size;
 	uint64_t band_sec = band * sbi->band_sectors
-		+ sec
-		- (band * sbi->bitmap_size);
+		+ sec - (band * sbi->bitmap_size);
 
 	if (band >= sbi->band_count || band_sec >= sbi->sectors_total ||
 		sec >= sbi->band_count * sbi->band_sectors)
@@ -80,7 +79,8 @@ struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band)
 	struct lean_bitmap *bitmap = LEAN_BITMAP(sbi, band);
 	struct address_space *mapping = sbi->bitmap->i_mapping;
 	struct page *page;
-	unsigned int nr_pages = LEAN_BITMAP_PAGES(sbi);
+	unsigned int nr_pages = ((bitmap->len + ~PAGE_MASK) & PAGE_MASK)
+		>> PAGE_SHIFT;
 	pgoff_t off = (band * sbi->bitmap_size * LEAN_SEC) >> PAGE_SHIFT;
 	bitmap->off = (band * sbi->bitmap_size * LEAN_SEC) & ~PAGE_MASK;
 
@@ -108,8 +108,9 @@ int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 	struct page *page;
 	struct lean_sb_info *sbi = s->s_fs_info;
 	uint32_t used = 0;
-	long *addr;
+	char *addr;
 	uint64_t off = bitmap->off;
+	uint64_t limit = bitmap->len + off;
 	
 	/* size should never be returned to an uninitialized state,
 	 * so we can safely check against it without the lock
@@ -125,18 +126,21 @@ int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 	if (bitmap->free != U32_MAX)
 		return 0;
 
-	for (i = 0; i < LEAN_BITMAP_PAGES(sbi); i++, off = 0) {
+	for (i = 0; i < LEAN_ROUND_PAGE(bitmap->len) >> PAGE_SHIFT;
+		i++, off = 0, limit -= PAGE_SIZE) {
 		page = bitmap->pages[i];
 		if (!page)
 			return -EINVAL;
 
 		addr = kmap(page);
-		while (off < PAGE_SIZE && off < bitmap->off + LEAN_BITMAP_SIZE(sbi))
-			used += hweight_long(*(addr + off++));
+		while (off < limit && off < PAGE_SIZE) {
+			used += hweight_long(*(addr + off));
+			off += sizeof(long);
+		}
 		kunmap(page);
 	}
 	
-	bitmap->free = sbi->band_sectors - used;
+	bitmap->free = (bitmap->len << 3) - used;
 	mutex_unlock(&bitmap->lock);
 	return 0;
 }
@@ -155,10 +159,16 @@ int lean_bitmap_cache_init(struct super_block *s)
 	if (!sbi->bitmap_cache)
 		return -ENOMEM;
 
-	for (i = 0; i < sbi->band_count; i ++) {
+	for (i = 0; i < sbi->band_count; i++) {
 		bitmap = LEAN_BITMAP(sbi, i);
 		mutex_init(&bitmap->lock);
 		bitmap->free = U32_MAX;
+		if (likely(i + 1 < sbi->band_count))
+			bitmap->len = sbi->band_sectors >> 3;
+		else
+			/* The last bitmap may be cut short */
+			bitmap->len = (sbi->sectors_total
+				% sbi->band_sectors) >> 3;
 	}
 
 	sbi->bitmap = new_inode(s);
