@@ -29,11 +29,11 @@ static inline unsigned int LEAN_DT(enum lean_file_type type)
 }
 
 #define LEAN_BITMAP_PAGES(sbi) (((sbi)->bitmap_size * LEAN_SEC + ~PAGE_MASK) \
-		>> PAGE_SHIFT)
+	>> PAGE_SHIFT)
 #define LEAN_BITMAP_SIZE(sbi) (sizeof(struct lean_bitmap) \
-		+ LEAN_BITMAP_PAGES(sbi) * sizeof(struct page *))
+	+ LEAN_BITMAP_PAGES(sbi) * sizeof(struct page *))
 #define LEAN_BITMAP(sbi, band) (((void *) sbi->bitmap_cache) \
-		+ band * LEAN_BITMAP_SIZE(sbi))
+	+ band * LEAN_BITMAP_SIZE(sbi))
 #define LEAN_ROUND_PAGE(s) ((s + ~PAGE_MASK) & PAGE_MASK)
 
 struct lean_bitmap {
