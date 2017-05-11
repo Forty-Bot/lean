@@ -53,9 +53,48 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 		sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
 	lean_msg(de->d_sb, KERN_DEBUG, "there are %llu free sectors",
 		lean_count_free_sectors(de->d_sb));
-	}
 #endif /* LEAN_TESTING */
 
+	return 0;
+}
+
+/* From fs/ext2/super.c */
+static void lean_clear_super_error(struct super_block *s)
+{
+	struct buffer_head *sbh = ((struct lean_sb_info *) s->s_fs_info)->sbh;
+
+	if (buffer_write_io_error(sbh)) {
+		/*
+		 * Oh, dear.  A previous attempt to write the
+		 * superblock failed.  This could happen because the
+		 * USB device was yanked out.  Or it could happen to
+		 * be a transient write error and maybe the block will
+		 * be remapped.  Nothing we can do but to retry the
+		 * write and hope for the best.
+		 */
+		lean_msg(s, KERN_ERR,
+			"previous I/O error to superblock detected\n");
+		clear_buffer_write_io_error(sbh);
+		set_buffer_uptodate(sbh);
+	}
+}
+
+static int lean_sync_super(struct super_block *s, int wait)
+{
+	int err;
+	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
+	struct lean_superblock *sb = (struct lean_superblock *) sbi->sbh->b_data;
+
+	lean_clear_super_error(s);
+	err = mutex_lock_interruptible(&sbi->lock);
+	if (err)
+		return err;
+	sbi->sectors_free = lean_count_free_sectors(s);
+	lean_info_to_superblock(sbi, sb);
+	mutex_unlock(&sbi->lock);
+	mark_buffer_dirty(sbi->sbh);
+	if (wait)
+		return sync_dirty_buffer(sbi->sbh);
 	return 0;
 }
 
@@ -63,9 +102,20 @@ static void lean_put_super(struct super_block *s)
 {
 	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
 
-	lean_bitmap_cache_destroy(s);
+	if (!(s->s_flags & MS_RDONLY)) {
+		if (mutex_lock_interruptible(&sbi->lock)) {
+			lean_msg(s, KERN_WARNING, "unable to get super lock");
+			goto sync_failed;
+		}	
+		((struct lean_superblock *) sbi->sbh->b_data)->state
+			= cpu_to_le32(1);
+		mutex_unlock(&sbi->lock);
+		if (lean_sync_super(s, true))
+			lean_msg(s, KERN_WARNING, "cannot sync super block");
+	}
 	
-	/* TODO: Write sb to disk before destroying it */
+sync_failed:
+	lean_bitmap_cache_destroy(s);
 	brelse(sbi->sbh);
 	s->s_fs_info = NULL;
 	kfree(sbi);
