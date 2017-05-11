@@ -243,6 +243,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	sbi->sbh = bh;
 	s->s_fs_info = sbi;
 	s->s_op = &lean_super_ops;
+	mutex_init(&sbi->lock);
 
 	ret = lean_bitmap_cache_init(s);
 	if (ret)

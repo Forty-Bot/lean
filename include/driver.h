@@ -70,5 +70,6 @@ struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band);
 int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap);
 int lean_bitmap_cache_init(struct super_block *s);
 void lean_bitmap_cache_destroy(struct super_block *s);
+uint64_t lean_count_free_sectors(struct super_block *s);
 
 #endif /* DRIVER_H */

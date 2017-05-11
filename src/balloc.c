@@ -196,3 +196,31 @@ void lean_bitmap_cache_destroy(struct super_block *s)
 	iput(sbi->bitmap);
 	kfree(sbi->bitmap_cache);
 }
+
+uint64_t lean_count_free_sectors(struct super_block *s)
+{
+	int i;
+	struct lean_bitmap *bitmap;
+	struct lean_sb_info *sbi = s->s_fs_info;
+	uint64_t count = 0;
+
+	for (i = 0; i < sbi->band_count; i++) {
+		bitmap = lean_bitmap_get(s, i);
+		if (IS_ERR(bitmap)) {
+			lean_msg(s, KERN_WARNING,
+				"could not read band %d bitmap", i);
+			continue;
+		}
+		if(lean_bitmap_getfree(s, bitmap)) {
+			lean_msg(s, KERN_WARNING,
+				"could not count free blocks in band %d", i);
+			lean_bitmap_put(bitmap);
+			continue;
+		}
+		lean_msg(s, KERN_DEBUG, "bitmap_cache[%d] ->free = %u ->len = %u",
+			i, bitmap->free, bitmap->len);
+		count += bitmap->free;
+		lean_bitmap_put(bitmap);
+	}
+	return count;
+}
