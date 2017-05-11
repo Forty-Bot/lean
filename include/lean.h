@@ -78,6 +78,7 @@ struct lean_sb_info {
 	struct lean_bitmap *bitmap_cache;
 	struct page **bitmap_pages;
 	struct buffer_head *sbh;
+	struct buffer_head *sbh_backup;
 #endif
 };
 

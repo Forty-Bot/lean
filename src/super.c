@@ -61,7 +61,9 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 /* From fs/ext2/super.c */
 static void lean_clear_super_error(struct super_block *s)
 {
-	struct buffer_head *sbh = ((struct lean_sb_info *) s->s_fs_info)->sbh;
+	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
+	struct buffer_head *sbh = sbi->sbh;
+	struct buffer_head *sbh_backup = sbi->sbh_backup;
 
 	if (buffer_write_io_error(sbh)) {
 		/*
@@ -73,28 +75,45 @@ static void lean_clear_super_error(struct super_block *s)
 		 * write and hope for the best.
 		 */
 		lean_msg(s, KERN_ERR,
-			"previous I/O error to superblock detected\n");
+			"previous I/O error to superblock detected");
 		clear_buffer_write_io_error(sbh);
 		set_buffer_uptodate(sbh);
+	}
+	if (buffer_write_io_error(sbh_backup)) {
+		lean_msg(s, KERN_ERR,
+			"previous I/O error to superblock backup detected");
+		clear_buffer_write_io_error(sbh_backup);
+		set_buffer_uptodate(sbh_backup);
 	}
 }
 
 static int lean_sync_super(struct super_block *s, int wait)
 {
-	int err;
+	int err, err2;
 	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
 	struct lean_superblock *sb = (struct lean_superblock *) sbi->sbh->b_data;
+	struct lean_superblock *sb_backup =
+		(struct lean_superblock *) sbi->sbh_backup->b_data;
 
 	lean_clear_super_error(s);
 	err = mutex_lock_interruptible(&sbi->lock);
 	if (err)
 		return err;
+#ifdef LEAN_TESTING
 	sbi->sectors_free = lean_count_free_sectors(s);
+#endif /* LEAN_TESTING */
 	lean_info_to_superblock(sbi, sb);
+	lean_info_to_superblock(sbi, sb_backup);
 	mutex_unlock(&sbi->lock);
 	mark_buffer_dirty(sbi->sbh);
-	if (wait)
-		return sync_dirty_buffer(sbi->sbh);
+	mark_buffer_dirty(sbi->sbh_backup);
+	if (wait) {
+		err = sync_dirty_buffer(sbi->sbh);
+		err2 = sync_dirty_buffer(sbi->sbh_backup);
+		if (err)
+			return err;
+		return err2;
+	}
 	return 0;
 }
 
@@ -223,14 +242,11 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	/* Reverse previous increment */
 	sec--;
 	if (!found_sb) {
-		lean_msg(s, KERN_ERR, "can't find a lean fs on dev %s",
-			s->s_id);
+		lean_msg(s, KERN_ERR, "can't find a lean fs");
 		goto failure;
 	}
 
 	lean_msg(s, KERN_INFO, "found superblock at sector %d", sec);
-
-	save_mount_options(s, data);
 
 	s->s_magic = le32_to_cpup((__le32 *) sb->magic);
 	if (sb->fs_version_major != LEAN_VERSION_MAJOR
@@ -251,6 +267,14 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 		lean_msg(s, KERN_ERR, "inconsistent superblock");
 		goto bh_failure;
 	}
+	if (!(s->s_flags & MS_RDONLY)) {
+		sbi->sbh_backup = sb_bread(s, sbi->super_backup);
+		if (!sbi->sbh_backup) {
+			lean_msg(s, KERN_WARNING,
+				"cannot read backup superblock, remounting read-only");
+			s->s_flags |= MS_RDONLY;
+		}
+	}	
 	/* The lower limit is spec specified (must use at least one sector for
 	 * each bitmap chunk). The upper limit is not, however, but we impose
 	 * it so we can store the number of free sectors as a signed 32-bit
@@ -307,6 +331,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 		goto bh_failure;
 	}
 
+	save_mount_options(s, data);
 	return 0;
 
 bh_failure:

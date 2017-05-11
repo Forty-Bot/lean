@@ -217,8 +217,6 @@ uint64_t lean_count_free_sectors(struct super_block *s)
 			lean_bitmap_put(bitmap);
 			continue;
 		}
-		lean_msg(s, KERN_DEBUG, "bitmap_cache[%d] ->free = %u ->len = %u",
-			i, bitmap->free, bitmap->len);
 		count += bitmap->free;
 		lean_bitmap_put(bitmap);
 	}
