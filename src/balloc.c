@@ -133,10 +133,8 @@ int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 			return -EINVAL;
 
 		addr = kmap(page);
-		while (off < limit && off < PAGE_SIZE) {
-			used += hweight_long(*(addr + off));
-			off += sizeof(long);
-		}
+		used += memweight(addr + off,
+			min(limit, (uint64_t) PAGE_SIZE) - off);
 		kunmap(page);
 	}
 	
