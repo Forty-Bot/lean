@@ -16,17 +16,29 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 	uint64_t extent = li->extent_starts[i];
 	uint32_t size = li->extent_sizes[i];
 
-	if (sec > li->sector_count)
-		return -ENXIO;
-	while (sec > size && i < LEAN_INODE_EXTENTS) {
+	if (li->extent_count < 1 || li->extent_count > LEAN_INODE_EXTENTS) {
+		/* Corrupt inode! */
+		lean_msg(inode->i_sb, KERN_WARNING, "corrupt inode %lu",
+			inode->i_ino);
+		return -EIO;
+	}
+	
+	while (sec > size && i < li->extent_count) {
 		extent = li->extent_starts[i];
 		size = li->extent_sizes[i];
 		sec -= size;
 		i++;
 	}
-	/* Double check to ensure consistency */
-	if (i == LEAN_INODE_EXTENTS)
+	/* Make sure we have extents left in the inode */
+	if (i == li->extent_count)
+		return -EFBIG;
+
+	if (sec > li->sector_count) {
+		if (!create)
+			return -ENXIO;
+		/* TODO: allocate sector */
 		return -ENXIO;
+	}
 
 	map_bh(bh_result, inode->i_sb, extent + sec);
 	return 0;
