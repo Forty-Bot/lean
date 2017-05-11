@@ -162,8 +162,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 		return -ENOMEM;
 
 	if (!sb_set_blocksize(s, 512)) {
-		lean_msg(s, KERN_ERR, "cannot set block size of dev %s to 512",
-			s->s_id);
+		lean_msg(s, KERN_ERR, "cannot set block size to 512");
 		goto failure;
 	}
 
