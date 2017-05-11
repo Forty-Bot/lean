@@ -149,6 +149,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	}
 
 	bool found_sb = false;
+	int diff;
 	int ret = -EINVAL;
 	int sec;
 	struct buffer_head *bh;
@@ -225,6 +226,19 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 			"invalid number of sectors per band: %llu",
 			sbi->band_sectors);
 		goto bh_failure;
+	}
+	/* Truncate the size of the disk to a multiple of 8 sectors
+	 * It's not worth futzing around with sub-byte
+	 * bitmap resolution for an extra few KiB
+	 *
+	 * This will silently shorten the disk
+	 */
+	diff = sbi->sectors_total & (8 - 1);
+	if (diff) {
+		sbi->sectors_total &= ~(8 - 1);
+		sbi->sectors_free -= diff;
+		sbi->band_count = (sbi->sectors_total + sbi->band_sectors - 1)
+			/ sbi->band_sectors;
 	}
 
 	sbi->sbh = bh;

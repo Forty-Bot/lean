@@ -169,7 +169,7 @@ int lean_bitmap_cache_init(struct super_block *s)
 		else
 			/* The last bitmap may be cut short */
 			bitmap->len = (sbi->sectors_total
-				% sbi->band_sectors) >> 3;
+				- i * sbi->band_sectors) >> 3;
 	}
 
 	sbi->bitmap = new_inode(s);
