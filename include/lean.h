@@ -53,12 +53,16 @@ struct lean_superblock {
 	uint8_t reserved[360];
 } __packed;
 
+#define LEAN_STATE_CLEAN 1
+#define LEAN_STATE_ERROR 2
+
 /*
  * Superblock info in memory
  */
 struct lean_sb_info {
 	uint8_t prealloc; /* Extra sectors to allocate */
 	uint8_t log2_band_sectors;
+	uint32_t state;
 	uint8_t uuid[16];
 	uint8_t volume_label[64];
 	uint64_t sectors_total;

@@ -53,7 +53,7 @@ int lean_superblock_to_info(const struct lean_superblock *sb,
 	uint32_t cs;
 
 	/* Error if the checksum is wrong, but still copy the data
-	 * Useful for, e.g., an fsck program
+	 * Useful for (for example) an fsck program
 	 */
 	cs = lean_checksum(sb, sizeof(*sb));
 	if (cs != tocpu32(sb->checksum))
@@ -61,6 +61,7 @@ int lean_superblock_to_info(const struct lean_superblock *sb,
 
 	sbi->prealloc = sb->prealloc + 1;
 	sbi->log2_band_sectors = sb->log2_band_sectors;
+	sbi->state = tocpu32(sb->state);
 	memcpy(sbi->uuid, sb->uuid, sizeof(sbi->uuid));
 	memcpy(sbi->volume_label, sb->volume_label, sizeof(sbi->volume_label));
 	sbi->sectors_total = tocpu64(sb->sectors_total);
@@ -81,7 +82,7 @@ int lean_superblock_to_info(const struct lean_superblock *sb,
 
 /*
  * Convert superblock info to a disk format superblock
- * sb->state and sb->reserved MUST be pre-initialized for a correct checksum
+ * sb->reserved MUST be pre-initialized for a correct checksum
  * Always succeeds
  */
 void lean_info_to_superblock(const struct lean_sb_info *sbi,
@@ -92,6 +93,7 @@ void lean_info_to_superblock(const struct lean_sb_info *sbi,
 	sb->fs_version_minor = LEAN_VERSION_MINOR;
 	sb->prealloc = sbi->prealloc - 1;
 	sb->log2_band_sectors = sbi->log2_band_sectors;
+	sb->state = tole32(sbi->state);
 	memcpy(sb->uuid, sbi->uuid, sizeof(sb->uuid));
 	memcpy(sb->volume_label, sbi->volume_label, sizeof(sb->volume_label));
 	sb->sectors_total = tole64(sbi->sectors_total);

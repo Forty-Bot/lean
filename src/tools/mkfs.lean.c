@@ -186,6 +186,7 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc,
 
 	sbi->prealloc = prealloc;
 	sbi->log2_band_sectors = log2_band_sec;
+	sbi->state = LEAN_STATE_CLEAN;
 	memcpy(sbi->uuid, uuid, 16);
 	strncpy(sbi->volume_label, volume_label, 63);
 	sbi->volume_label[63] = '\0';
@@ -235,8 +236,6 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc,
 	lean_info_to_inode(root, root_ino);
 	write_at_sector(fd, sbi->root, root_ino, sizeof(*root) + data_size);
 
-	/* Set the mount bit */
-	sb->state = htole32(1);
 	lean_info_to_superblock(sbi, sb);
 	write_at_sector(fd, sbi->super_primary, sb, sizeof(*sb));
 	write_at_sector(fd, sbi->super_backup, sb, sizeof(*sb));

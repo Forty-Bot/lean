@@ -126,13 +126,12 @@ static void lean_put_super(struct super_block *s)
 			lean_msg(s, KERN_WARNING, "unable to get super lock");
 			goto sync_failed;
 		}	
-		((struct lean_superblock *) sbi->sbh->b_data)->state
-			= cpu_to_le32(1);
+		sbi->state |= LEAN_STATE_CLEAN;
 		mutex_unlock(&sbi->lock);
 		if (lean_sync_super(s, true))
 			lean_msg(s, KERN_WARNING, "cannot sync super block");
 	}
-	
+
 sync_failed:
 	lean_bitmap_cache_destroy(s);
 	brelse(sbi->sbh);
@@ -255,14 +254,14 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 			sb->fs_version_major, sb->fs_version_minor);
 		goto bh_failure;
 	}
-	if (le32_to_cpu(sb->state) != 1) {
-		lean_msg(s, KERN_WARNING, "dev %s not unmounted properly!",
-			s->s_id);
-	}
 	if (lean_superblock_to_info(sb, sbi)) {
 		lean_msg(s, KERN_ERR, "wrong superblock checksum");
 		goto bh_failure;
 	}
+	if (!(sbi->state & LEAN_STATE_CLEAN))
+		lean_msg(s, KERN_WARNING, "filesystem not unmounted properly");
+	if (sbi->state & LEAN_STATE_ERROR)
+		lean_msg(s, KERN_WARNING, "filesystem has major errors");
 	if (sbi->super_primary != sec) {
 		lean_msg(s, KERN_ERR, "inconsistent superblock");
 		goto bh_failure;
