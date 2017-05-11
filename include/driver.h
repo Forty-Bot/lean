@@ -63,7 +63,6 @@ extern const struct file_operations lean_dir_ops;
 extern const struct inode_operations lean_dir_inode_ops;
 
 /* balloc.c */
-extern const struct address_space_operations lean_bitmap_aops;
 void __lean_bitmap_put(struct lean_bitmap *bitmap, int count);
 #define lean_bitmap_put(sbi, bitmap) \
 	__lean_bitmap_put((bitmap), LEAN_ROUND_PAGE((bitmap)->len) >> PAGE_SHIFT)
