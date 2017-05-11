@@ -216,8 +216,9 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 		goto bh_failure;
 	}
 	/* The lower limit is spec specified (must use at least one sector for
-	 * each bitmap chunk). The upper limit is so we can store the number of
-	 * free sectors as a signed 32-bit integer
+	 * each bitmap chunk). The upper limit is not, however, but we impose
+	 * it so we can store the number of free sectors as a signed 32-bit
+	 * integer
 	 */
 	if (sbi->log2_band_sectors < 12 || sbi->log2_band_sectors > 31) {
 		lean_msg(s, KERN_ERR,

@@ -143,6 +143,10 @@ int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 	return 0;
 }
 
+/*
+ * Initialize the bitmap inode and bitmap_cache fields
+ * along with associated info
+ */
 int lean_bitmap_cache_init(struct super_block *s)
 {
 	int i;
