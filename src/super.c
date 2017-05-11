@@ -32,11 +32,7 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 {
 	struct lean_sb_info *sbi = (struct lean_sb_info *) de->d_sb->s_fs_info;
 	uint64_t fsid;
-#ifdef LEAN_TESTING
-	int i;
-	char *kaddr;
-	struct lean_bitmap *bitmap;
-#endif /* __LEAN_TESTING */
+	
 	strncpy((void *) &buf->f_type,
 		LEAN_MAGIC_SUPERBLOCK, sizeof(buf->f_type));
 	buf->f_bsize = buf->f_frsize = 512;
@@ -55,20 +51,10 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 #ifdef LEAN_TESTING
 	lean_msg(de->d_sb, KERN_DEBUG, "bs %llu bc %llu bms %llu",
 		sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
-	for (i = 0; i < (sbi->band_count < 10 ? sbi->band_count : 10); i++) {
-		bitmap = lean_bitmap_get(de->d_sb, i);
-		if (IS_ERR(bitmap)) {
-			lean_msg(de->d_sb, KERN_WARNING, "invalid bitmap %d!", i);
-			continue;
-		}
-		if(lean_bitmap_getfree(de->d_sb, bitmap))
-			lean_msg(de->d_sb, KERN_WARNING,
-				"could not read bitmap %d", i);
-		lean_msg(de->d_sb, KERN_DEBUG, "Band %d has %d free sectors",
-			i, bitmap->free);
-		lean_bitmap_put(sbi, bitmap);
+	lean_msg(de->d_sb, KERN_DEBUG, "there are %llu free sectors",
+		lean_count_free_sectors(de->d_sb));
 	}
-#endif /* __LEAN_TESTING */
+#endif /* LEAN_TESTING */
 
 	return 0;
 }
