@@ -136,8 +136,10 @@ uint64_t generate_bm(int fd, struct lean_sb_info *sb)
 	 */
 	zero_sec = sb->root + sb->prealloc;
 	fill_bitmap(bm, zero_sec);
+	/* [initial sectors (including band 0's bitmap)] + [superblock backup],
+	 * [each band's bitmap - band 0's bitmap] */
 	sb->sectors_free = sb->sectors_total -
-		(zero_sec + (bands - 1) * band_bm_sec);
+		(zero_sec + 1 + (bands - 1) * band_bm_sec);
 	sb->super_backup = ((sb->sectors_total < band_sec) ?
 		sb->sectors_total : band_sec) - 1;
 	set_sec(bm, sb->super_backup);
