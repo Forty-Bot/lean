@@ -64,7 +64,7 @@ extern const struct inode_operations lean_dir_inode_ops;
 
 /* balloc.c */
 void __lean_bitmap_put(struct lean_bitmap *bitmap, int count);
-#define lean_bitmap_put(sbi, bitmap) \
+#define lean_bitmap_put(bitmap) \
 	__lean_bitmap_put((bitmap), LEAN_ROUND_PAGE((bitmap)->len) >> PAGE_SHIFT)
 struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band);
 int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap);
