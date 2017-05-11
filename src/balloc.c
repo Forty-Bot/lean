@@ -106,7 +106,6 @@ int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 {
 	int err, i;
 	struct page *page;
-	struct lean_sb_info *sbi = s->s_fs_info;
 	uint32_t used = 0;
 	char *addr;
 	uint64_t off = bitmap->off;
