@@ -22,12 +22,11 @@ void lean_msg(struct super_block *s, const char *prefix, const char *fmt, ...)
 	vaf.fmt = fmt;
 	vaf.va = &args;
 
-	printk("%slean (%s): %pV", prefix, s->s_id, &vaf);
+	printk("%slean (%s): %pV\n", prefix, s->s_id, &vaf);
 
 	va_end(args);
 }
 
-#define LEAN_TESTING
 static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 {
 	struct lean_sb_info *sbi = (struct lean_sb_info *) de->d_sb->s_fs_info;
@@ -103,8 +102,12 @@ static int lean_sync_super(struct super_block *s, int wait)
 	sbi->sectors_free = lean_count_free_sectors(s);
 #endif /* LEAN_TESTING */
 	lean_info_to_superblock(sbi, sb);
-	lean_info_to_superblock(sbi, sb_backup);
 	mutex_unlock(&sbi->lock);
+	
+	lean_msg(s, KERN_DEBUG,
+		"super_sync(s, wait = %d) state = %x magic = %.4s",
+		wait, sbi->state, sb->magic);
+	memcpy(sb, sb_backup, sizeof(*sb_backup));
 	mark_buffer_dirty(sbi->sbh);
 	mark_buffer_dirty(sbi->sbh_backup);
 	if (wait) {
@@ -114,6 +117,28 @@ static int lean_sync_super(struct super_block *s, int wait)
 			return err;
 		return err2;
 	}
+	return 0;
+}
+
+/* Unset STATE_CLEAN here */
+static int lean_sync_fs(struct super_block *s, int wait)
+{
+	int err;
+	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
+	
+	if (sbi->state & LEAN_STATE_CLEAN) {
+		err = mutex_lock_interruptible(&sbi->lock);
+		if (err)
+			return err;
+		sbi->state &= ~LEAN_STATE_CLEAN;
+		mutex_unlock(&sbi->lock);
+	}
+	return lean_sync_super(s, wait);
+}
+
+int lean_write_super(struct super_block *s) {
+	if(!(s->s_flags & MS_RDONLY))
+		return lean_sync_fs(s, true);
 	return 0;
 }
 
@@ -191,6 +216,7 @@ static struct super_operations const lean_super_ops = {
 	.destroy_inode = lean_inode_free,
 	.write_inode = lean_write_inode,
 	.put_super = lean_put_super,
+	.sync_fs = lean_sync_fs,
 	.statfs = lean_statfs,
 	.show_options = generic_show_options
 };
@@ -331,7 +357,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	}
 
 	save_mount_options(s, data);
-	return 0;
+	return lean_write_super(s);
 
 bh_failure:
 	brelse(bh);

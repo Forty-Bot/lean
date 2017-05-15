@@ -21,6 +21,8 @@ struct lean_bitmap;
 #define __packed __attribute__((__packed__))
 #endif /* __KERNEL__ */
 
+#define LEAN_TESTING
+
 #define LEAN_VERSION_MAJOR 0x00
 #define LEAN_VERSION_MINOR 0x06
 
