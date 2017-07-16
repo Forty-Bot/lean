@@ -234,7 +234,7 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc,
 
 
 	lean_info_to_inode(root, root_ino);
-	write_at_sector(fd, sbi->root, root_ino, sizeof(*root) + data_size);
+	write_at_sector(fd, sbi->root, root_ino, sizeof(*root_ino) + data_size);
 
 	lean_info_to_superblock(sbi, sb);
 	write_at_sector(fd, sbi->super_primary, sb, sizeof(*sb));
