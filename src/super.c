@@ -88,7 +88,7 @@ static void lean_clear_super_error(struct super_block *s)
 
 static int lean_sync_super(struct super_block *s, int wait)
 {
-	int err, err2;
+	int err = 0;
 	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
 	struct lean_superblock *sb = (struct lean_superblock *) sbi->sbh->b_data;
 	struct lean_superblock *sb_backup =
@@ -111,13 +111,22 @@ static int lean_sync_super(struct super_block *s, int wait)
 	mark_buffer_dirty(sbi->sbh);
 	mark_buffer_dirty(sbi->sbh_backup);
 	if (wait) {
-		err = sync_dirty_buffer(sbi->sbh);
-		err2 = sync_dirty_buffer(sbi->sbh_backup);
-		if (err)
-			return err;
-		return err2;
+		sync_dirty_buffer(sbi->sbh);
+		sync_dirty_buffer(sbi->sbh_backup);
+		if (buffer_req(sbi->sbh)
+			&& !buffer_uptodate(sbi->sbh)) {
+			lean_msg(s, KERN_WARNING,
+				"unable to sync super block");
+			err = -EIO;
+		}
+		if (buffer_req(sbi->sbh_backup)
+			&& !buffer_uptodate(sbi->sbh_backup)) {
+			lean_msg(s, KERN_WARNING,
+				"unable to sync super block backup");
+			err = -EIO;
+		}
 	}
-	return 0;
+	return err;
 }
 
 /* Unset STATE_CLEAN here */
