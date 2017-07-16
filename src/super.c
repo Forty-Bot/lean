@@ -169,6 +169,8 @@ static void lean_put_super(struct super_block *s)
 sync_failed:
 	lean_bitmap_cache_destroy(s);
 	brelse(sbi->sbh);
+	if (!(s->s_flags & MS_RDONLY))
+		brelse(sbi->sbh_backup);
 	s->s_fs_info = NULL;
 	kfree(sbi);
 }
