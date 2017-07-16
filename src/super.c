@@ -104,10 +104,7 @@ static int lean_sync_super(struct super_block *s, int wait)
 	lean_info_to_superblock(sbi, sb);
 	mutex_unlock(&sbi->lock);
 	
-	lean_msg(s, KERN_DEBUG,
-		"super_sync(s, wait = %d) state = %x magic = %.4s",
-		wait, sbi->state, sb->magic);
-	memcpy(sb, sb_backup, sizeof(*sb_backup));
+	memcpy(sb_backup, sb, sizeof(*sb_backup));
 	mark_buffer_dirty(sbi->sbh);
 	mark_buffer_dirty(sbi->sbh_backup);
 	if (wait) {
