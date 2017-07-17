@@ -81,7 +81,9 @@ struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band)
 	struct page *page;
 	unsigned int nr_pages = ((bitmap->len + ~PAGE_MASK) & PAGE_MASK)
 		>> PAGE_SHIFT;
+	/* Offset in page-sized units */
 	pgoff_t off = (band * sbi->bitmap_size * LEAN_SEC) >> PAGE_SHIFT;
+	/* Offset from the beginning of the page (in bytes) */
 	bitmap->off = (band * sbi->bitmap_size * LEAN_SEC) & ~PAGE_MASK;
 
 	for (i = 0; i < nr_pages; i++) {
@@ -208,6 +210,7 @@ uint64_t lean_count_free_sectors(struct super_block *s)
 	struct lean_sb_info *sbi = s->s_fs_info;
 	uint64_t count = 0;
 
+#ifdef LEAN_TESTING
 	for (i = 0; i < sbi->band_count; i++) {
 		bitmap = lean_bitmap_get(s, i);
 		if (IS_ERR(bitmap)) {
@@ -218,5 +221,10 @@ uint64_t lean_count_free_sectors(struct super_block *s)
 		count += lean_bitmap_getfree(s, bitmap);
 		lean_bitmap_put(bitmap);
 	}
+	lean_msg(s, KERN_DEBUG, "sbi->sectors_free = %llu, counted = %llu",
+		sbi->sectors_free, count);
 	return count;
+#else /* LEAN_TESTING */
+	return sbi->sectors_free;
+#endif
 }

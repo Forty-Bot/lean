@@ -36,7 +36,7 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 		LEAN_MAGIC_SUPERBLOCK, sizeof(buf->f_type));
 	buf->f_bsize = buf->f_frsize = 512;
 	buf->f_blocks = sbi->sectors_total;
-	buf->f_bfree = buf->f_bavail = sbi->sectors_free;
+	buf->f_bfree = buf->f_bavail = lean_count_free_sectors(de->d_sb);
 	/* We don't have hard inode limits, so don't bother */
 	buf->f_files = buf->f_ffree = 0;
 	/* Ripped from fs/ext2/super.c */
@@ -50,8 +50,6 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 #ifdef LEAN_TESTING
 	lean_msg(de->d_sb, KERN_DEBUG, "bs %llu bc %llu bms %llu",
 		sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
-	lean_msg(de->d_sb, KERN_DEBUG, "there are %llu free sectors",
-		lean_count_free_sectors(de->d_sb));
 #endif /* LEAN_TESTING */
 
 	return 0;
@@ -100,13 +98,14 @@ static int lean_sync_super(struct super_block *s, int wait)
 		(struct lean_superblock *) sbi->sbh_backup->b_data;
 
 	lean_clear_super_error(s);
+	
 	err = mutex_lock_interruptible(&sbi->lock);
 	if (err)
 		return err;
-#ifdef LEAN_TESTING
+	
 	sbi->sectors_free = lean_count_free_sectors(s);
-#endif /* LEAN_TESTING */
 	lean_info_to_superblock(sbi, sb);
+	
 	mutex_unlock(&sbi->lock);
 	
 	memcpy(sb_backup, sb, sizeof(*sb_backup));
