@@ -88,7 +88,7 @@ struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band)
 
 	for (i = 0; i < nr_pages; i++) {
 		page = read_mapping_page(mapping, off + i, NULL);
-		if (IS_ERR(page))
+		if (IS_ERR(page) || page == NULL)
 			goto free_pages;
 	
 		BUG_ON(!(bitmap->pages[i] == NULL || bitmap->pages[i] == page));
@@ -101,18 +101,54 @@ free_pages:
 }
 
 /*
+ * Iterate over a bitmap, calling func on each page-sized (or less) chunk
+ * func()'s arguments are:
+ *	char *addr -- The starting address of this chunk
+ *	uint64_t len -- The length of the chunk
+ *	void *data -- Private data
+ */
+static int lean_bitmap_iterate(struct lean_bitmap *bitmap,
+	int (*func)(char *, uint64_t, void *), void *data)
+{
+	int i, ret;
+	struct page *page;
+	char *addr;
+	uint64_t off = bitmap->off;
+	uint64_t limit = bitmap->len + off;
+	
+	for (i = 0, ret = 0;
+		i < LEAN_ROUND_PAGE(bitmap->len) >> PAGE_SHIFT && !ret;
+		i++, off = 0, limit -= PAGE_SIZE) {
+		page = bitmap->pages[i];
+		/* A null page means this bitmap wasn't aquired with
+		 * lean_bitmap_get peoperly
+		 */
+		BUG_ON(!page);
+		
+		addr = kmap(page);
+		ret = func(addr + off,
+			min(limit, (uint64_t) PAGE_SIZE) - off, data);
+		kunmap(page);
+	}
+	return ret;	
+}
+
+static int lean_bitmap_getfree_iter(char *addr, uint64_t len, void *data)
+{
+	uint32_t *used = data;
+
+	*used += memweight(addr, len);
+	return 0;
+}
+
+/*
  * Returns the free blocks in a bitmap
  * Always use this and not lean_bitmap->free directly
  * May take bitmap->lock
  */
 uint32_t lean_bitmap_getfree(struct lean_bitmap *bitmap)
 {
-	int i;
-	struct page *page;
 	uint32_t used = 0;
-	char *addr;
-	uint64_t off = bitmap->off;
-	uint64_t limit = bitmap->len + off;
 	
 	/* size should never be returned to an uninitialized state,
 	 * so we can safely check against it without the lock
@@ -128,18 +164,7 @@ uint32_t lean_bitmap_getfree(struct lean_bitmap *bitmap)
 		return bitmap->free;
 	}
 
-	for (i = 0; i < LEAN_ROUND_PAGE(bitmap->len) >> PAGE_SHIFT;
-		i++, off = 0, limit -= PAGE_SIZE) {
-		page = bitmap->pages[i];
-		if (!page)
-			return -EINVAL;
-
-		addr = kmap(page);
-		used += memweight(addr + off,
-			min(limit, (uint64_t) PAGE_SIZE) - off);
-		kunmap(page);
-	}
-	
+	lean_bitmap_iterate(bitmap, lean_bitmap_getfree_iter, &used);
 	bitmap->free = (bitmap->len << 3) - used;
 	spin_unlock(&bitmap->lock);
 	return bitmap->free;
