@@ -5,6 +5,12 @@
 
 #include <linux/fs.h>
 
+/* 
+ * Locks *must* be taken in the following order:
+ * sbi->lock
+ * bitmap->lock
+ */
+
 /*
  * Extract a struct lean_ino_info from a struct inode
  */
@@ -37,7 +43,7 @@ static inline unsigned int LEAN_DT(enum lean_file_type type)
 #define LEAN_ROUND_PAGE(s) ((s + ~PAGE_MASK) & PAGE_MASK)
 
 struct lean_bitmap {
-	struct mutex lock;
+	spinlock_t lock;
 	uint32_t off;
 	uint32_t free;
 	uint32_t len;

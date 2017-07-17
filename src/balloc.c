@@ -117,13 +117,11 @@ int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 	if (bitmap->free != U32_MAX)
 		return 0;
 
-	err = mutex_lock_interruptible(&bitmap->lock);
-	if (err)
-		return err;
+	spin_lock(&bitmap->lock);
 
 	/* Check to see no one has updated the size while we've been waiting */
 	if (bitmap->free != U32_MAX) {
-		mutex_unlock(&bitmap->lock);
+		spin_unlock(&bitmap->lock);
 		return 0;
 	}
 
@@ -140,7 +138,7 @@ int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 	}
 	
 	bitmap->free = (bitmap->len << 3) - used;
-	mutex_unlock(&bitmap->lock);
+	spin_unlock(&bitmap->lock);
 	return 0;
 }
 
@@ -164,7 +162,7 @@ int lean_bitmap_cache_init(struct super_block *s)
 
 	for (i = 0; i < sbi->band_count; i++) {
 		bitmap = LEAN_BITMAP(sbi, i);
-		mutex_init(&bitmap->lock);
+		spin_lock_init(&bitmap->lock);
 		bitmap->free = U32_MAX;
 		if (likely(i + 1 < sbi->band_count))
 			bitmap->len = sbi->band_sectors >> 3;
