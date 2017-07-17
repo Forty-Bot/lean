@@ -99,12 +99,12 @@ free_pages:
 }
 
 /*
- * Populates bitmap->free
- * returns 0 on success
+ * Returns the free blocks in a bitmap
+ * Always use this and not lean_bitmap->free directly
  */
-int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
+uint32_t lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 {
-	int err, i;
+	int i;
 	struct page *page;
 	uint32_t used = 0;
 	char *addr;
@@ -115,14 +115,14 @@ int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 	 * so we can safely check against it without the lock
 	 */
 	if (bitmap->free != U32_MAX)
-		return 0;
+		return bitmap->free;
 
 	spin_lock(&bitmap->lock);
 
 	/* Check to see no one has updated the size while we've been waiting */
 	if (bitmap->free != U32_MAX) {
 		spin_unlock(&bitmap->lock);
-		return 0;
+		return bitmap->free;
 	}
 
 	for (i = 0; i < LEAN_ROUND_PAGE(bitmap->len) >> PAGE_SHIFT;
@@ -139,7 +139,7 @@ int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 	
 	bitmap->free = (bitmap->len << 3) - used;
 	spin_unlock(&bitmap->lock);
-	return 0;
+	return bitmap->free;
 }
 
 /*
@@ -211,13 +211,7 @@ uint64_t lean_count_free_sectors(struct super_block *s)
 				"could not read band %d bitmap", i);
 			continue;
 		}
-		if(lean_bitmap_getfree(s, bitmap)) {
-			lean_msg(s, KERN_WARNING,
-				"could not count free blocks in band %d", i);
-			lean_bitmap_put(bitmap);
-			continue;
-		}
-		count += bitmap->free;
+		count += lean_bitmap_getfree(s, bitmap);
 		lean_bitmap_put(bitmap);
 	}
 	return count;
