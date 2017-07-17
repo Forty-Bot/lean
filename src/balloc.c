@@ -225,6 +225,6 @@ uint64_t lean_count_free_sectors(struct super_block *s)
 		sbi->sectors_free, count);
 	return count;
 #else /* LEAN_TESTING */
-	return sbi->sectors_free;
+	return percpu_counter_read_positive(&sbi->free_counter);
 #endif
 }

@@ -178,6 +178,7 @@ static void lean_put_super(struct super_block *s)
 	}
 
 sync_failed:
+	percpu_counter_destroy(&sbi->free_counter);
 	lean_bitmap_cache_destroy(s);
 	brelse(sbi->sbh);
 	if (!(s->s_flags & MS_RDONLY))
@@ -352,9 +353,14 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	s->s_op = &lean_super_ops;
 	mutex_init(&sbi->lock);
 
-	ret = lean_bitmap_cache_init(s);
+	ret = percpu_counter_init(&sbi->free_counter,
+		sbi->sectors_free, GFP_KERNEL);
 	if (ret)
 		goto backup_failure;
+
+	ret = lean_bitmap_cache_init(s);
+	if (ret)
+		goto counter_failure;
 
 	s->s_time_gran = 1000;
 	s->s_maxbytes = MAX_LFS_FILESIZE;
@@ -381,9 +387,10 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	save_mount_options(s, data);
 	return lean_write_super(s);
 
-
 bitmap_failure:
 	lean_bitmap_cache_destroy(s);
+counter_failure:
+	percpu_counter_destroy(&sbi->free_counter);
 backup_failure:
 	if (!(s->s_flags & MS_RDONLY))
 		brelse(sbi->sbh_backup);

@@ -82,6 +82,7 @@ struct lean_sb_info {
 	uint64_t bitmap_size; /* Band bitmap size in sectors */
 #ifdef __KERNEL__
 	struct mutex lock;
+	struct percpu_counter free_counter;
 	struct inode *bitmap;
 	struct lean_bitmap *bitmap_cache;
 	struct page **bitmap_pages;
