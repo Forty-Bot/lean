@@ -99,7 +99,7 @@ free_pages:
 }
 
 /*
- * Populates bitmap->size
+ * Populates bitmap->free
  * returns 0 on success
  */
 int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
@@ -122,8 +122,10 @@ int lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 		return err;
 
 	/* Check to see no one has updated the size while we've been waiting */
-	if (bitmap->free != U32_MAX)
+	if (bitmap->free != U32_MAX) {
+		mutex_unlock(&bitmap->lock);
 		return 0;
+	}
 
 	for (i = 0; i < LEAN_ROUND_PAGE(bitmap->len) >> PAGE_SHIFT;
 		i++, off = 0, limit -= PAGE_SIZE) {
