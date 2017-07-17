@@ -105,7 +105,7 @@ free_pages:
  * Always use this and not lean_bitmap->free directly
  * May take bitmap->lock
  */
-uint32_t lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
+uint32_t lean_bitmap_getfree(struct lean_bitmap *bitmap)
 {
 	int i;
 	struct page *page;
@@ -218,7 +218,7 @@ uint64_t lean_count_free_sectors(struct super_block *s)
 				"could not read band %d bitmap", i);
 			continue;
 		}
-		count += lean_bitmap_getfree(s, bitmap);
+		count += lean_bitmap_getfree(bitmap);
 		lean_bitmap_put(bitmap);
 	}
 	lean_msg(s, KERN_DEBUG, "sbi->sectors_free = %llu, counted = %llu",
