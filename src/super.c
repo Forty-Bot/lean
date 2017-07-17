@@ -86,6 +86,11 @@ static void lean_clear_super_error(struct super_block *s)
 	}
 }
 
+/*
+ * Updates the buffer_heads representing the superblock and superblock
+ * backup and writes them to disk
+ * Takes s->s_fs_info->lock
+ */
 static int lean_sync_super(struct super_block *s, int wait)
 {
 	int err = 0;
@@ -126,7 +131,10 @@ static int lean_sync_super(struct super_block *s, int wait)
 	return err;
 }
 
-/* Unset STATE_CLEAN here */
+/*
+ * Synchonizes the filesystem to disk
+ * May take s->s_fs_info->lock
+ */
 static int lean_sync_fs(struct super_block *s, int wait)
 {
 	int err;
@@ -142,12 +150,19 @@ static int lean_sync_fs(struct super_block *s, int wait)
 	return lean_sync_super(s, wait);
 }
 
+/*
+ * Synchronizes the filesystem to disk if it is mounted r/w
+ * May take s->s_fs_info->lock
+ */
 int lean_write_super(struct super_block *s) {
 	if(!(s->s_flags & MS_RDONLY))
 		return lean_sync_fs(s, true);
 	return 0;
 }
 
+/*
+ * Takes s->s_fs_info->lock if mounted r/w
+ */
 static void lean_put_super(struct super_block *s)
 {
 	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;

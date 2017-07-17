@@ -42,6 +42,9 @@ static inline unsigned int LEAN_DT(enum lean_file_type type)
 	+ band * LEAN_BITMAP_SIZE(sbi))
 #define LEAN_ROUND_PAGE(s) ((s + ~PAGE_MASK) & PAGE_MASK)
 
+/*
+ * ->lock protects writes (but not reads) to both ->free and ->pages
+ */
 struct lean_bitmap {
 	spinlock_t lock;
 	uint32_t off;

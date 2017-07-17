@@ -60,6 +60,8 @@ struct lean_superblock {
 
 /*
  * Superblock info in memory
+ * ->lock protects writes to all members except the various bitmap* fields,
+ * which are protected by the appropriate lean_bitmap
  */
 struct lean_sb_info {
 	uint8_t prealloc; /* Extra sectors to allocate */

@@ -101,6 +101,7 @@ free_pages:
 /*
  * Returns the free blocks in a bitmap
  * Always use this and not lean_bitmap->free directly
+ * May take bitmap->lock
  */
 uint32_t lean_bitmap_getfree(struct super_block *s, struct lean_bitmap *bitmap)
 {
@@ -197,6 +198,9 @@ void lean_bitmap_cache_destroy(struct super_block *s)
 	kfree(sbi->bitmap_cache);
 }
 
+/*
+ * May take lean_bitmap->lock(s)
+ */
 uint64_t lean_count_free_sectors(struct super_block *s)
 {
 	int i;
