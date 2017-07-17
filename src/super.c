@@ -332,7 +332,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 		lean_msg(s, KERN_ERR,
 			"invalid number of sectors per band: %llu",
 			sbi->band_sectors);
-		goto bh_failure;
+		goto backup_failure;
 	}
 	/* Truncate the size of the disk to a multiple of 8 sectors
 	 * It's not worth futzing around with sub-byte
@@ -355,7 +355,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 
 	ret = lean_bitmap_cache_init(s);
 	if (ret)
-		goto bh_failure;
+		goto backup_failure;
 
 	s->s_time_gran = 1000;
 	s->s_maxbytes = MAX_LFS_FILESIZE;
@@ -364,24 +364,30 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	if (IS_ERR(root)) {
 		ret = PTR_ERR(root);
 		lean_msg(s, KERN_ERR, "error reading root inode:");
-		goto bh_failure;
+		goto bitmap_failure;
 	}
 	if (!S_ISDIR(root->i_mode) || !root->i_blocks || !root->i_size) {
 		lean_msg(s, KERN_ERR, "corrupt root inode");
 		iput(root);
-		goto bh_failure;
+		goto bitmap_failure;
 	}
 
 	s->s_root = d_make_root(root);
 	if (!s->s_root) {
 		lean_msg(s, KERN_ERR, "get root inode failed");
 		ret = -ENOMEM;
-		goto bh_failure;
+		goto bitmap_failure;
 	}
 
 	save_mount_options(s, data);
 	return lean_write_super(s);
 
+
+bitmap_failure:
+	lean_bitmap_cache_destroy(s);
+backup_failure:
+	if (!(s->s_flags & MS_RDONLY))
+		brelse(sbi->sbh_backup);
 bh_failure:
 	brelse(bh);
 failure:
