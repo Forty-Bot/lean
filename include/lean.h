@@ -60,8 +60,6 @@ struct lean_superblock {
 
 /*
  * Superblock info in memory
- * ->lock protects writes to all members except the various bitmap* fields,
- * which are protected by the appropriate lean_bitmap
  */
 struct lean_sb_info {
 	uint8_t prealloc; /* Extra sectors to allocate */
@@ -81,6 +79,10 @@ struct lean_sb_info {
 	uint64_t band_count; /* Number of bands */
 	uint64_t bitmap_size; /* Band bitmap size in sectors */
 #ifdef __KERNEL__
+	/*
+	 * Protects writes to all members except the various bitmap
+	 * fields, which are protected by the appropriate bitmap_cache lock
+	 */
 	struct mutex lock;
 	struct percpu_counter free_counter;
 	struct inode *bitmap;
@@ -208,11 +210,11 @@ enum lean_inode_attr {
 	LIA_PREALLOC = 1 << 18,
 	LIA_INLINE = 1 << 19, /* Inline extended attributes in first sector */
 	/* Filetype attributes */
-	LIA_FMT_MASK = (int) (7u << 29), /* Mask of file type */
+	LIA_FMT_MASK = (int)(7u << 29), /* Mask of file type */
 	LIA_FMT_REG = 1 << 29, /* Regular file */
 	LIA_FMT_DIR = 2 << 29, /* Directory */
 	LIA_FMT_SYM = 3 << 29, /* Symbolic link */
-	LIA_FMT_FORK = (int) (4u << 29) /* Fork */
+	LIA_FMT_FORK = (int)(4u << 29) /* Fork */
 };
 
 #define LIA_ISFMT_REG(a) (((a) & LIA_FMT_REG) == LIA_FMT_REG)
@@ -264,9 +266,9 @@ static inline struct timespec lean_timespec(int64_t time)
 #define WRONG_CHECKSUM 1
 uint32_t lean_checksum(const void *data, size_t size);
 int lean_superblock_to_info(const struct lean_superblock *sb,
-	struct lean_sb_info *sbi);
+			    struct lean_sb_info *sbi);
 void lean_info_to_superblock(const struct lean_sb_info *sbi,
-	struct lean_superblock *sb);
+			     struct lean_superblock *sb);
 int lean_inode_to_info(const struct lean_inode *li, struct lean_ino_info *ii);
 void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li);
 

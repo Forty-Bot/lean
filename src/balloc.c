@@ -11,7 +11,7 @@
  * This avoid dealing with bios or buffer_heads ourselves
  */
 static int lean_get_bitmap_block(struct inode *inode, sector_t sec,
-	struct buffer_head *bh_result, int create)
+				 struct buffer_head *bh_result, int create)
 {
 	struct super_block *s = inode->i_sb;
 	struct lean_sb_info *sbi = s->s_fs_info;
@@ -20,7 +20,7 @@ static int lean_get_bitmap_block(struct inode *inode, sector_t sec,
 		+ sec - (band * sbi->bitmap_size);
 
 	if (band >= sbi->band_count || band_sec >= sbi->sectors_total ||
-		sec >= sbi->band_count * sbi->band_sectors)
+	    sec >= sbi->band_count * sbi->band_sectors)
 		return -ENXIO;
 
 	if (band == 0)
@@ -31,7 +31,7 @@ static int lean_get_bitmap_block(struct inode *inode, sector_t sec,
 }
 
 static int lean_write_bitmap_page(struct page *page,
-	struct writeback_control *wbc)
+				  struct writeback_control *wbc)
 {
 	return mpage_writepage(page, lean_get_bitmap_block, wbc);
 }
@@ -42,14 +42,15 @@ static int lean_read_bitmap_page(struct file *file, struct page *page)
 }
 
 static int lean_write_bitmap_pages(struct address_space *mapping,
-	struct writeback_control *wbc)
+				   struct writeback_control *wbc)
 {
 	return mpage_writepages(mapping, wbc, lean_get_bitmap_block);
 }
 
 static int lean_read_bitmap_pages(struct file *file,
-	struct address_space *mapping, struct list_head *pages,
-	unsigned int nr_pages)
+				  struct address_space *mapping,
+				  struct list_head *pages,
+				  unsigned int nr_pages)
 {
 	return mpage_readpages(mapping, pages, nr_pages, lean_get_bitmap_block);
 }
@@ -88,10 +89,10 @@ struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band)
 
 	for (i = 0; i < nr_pages; i++) {
 		page = read_mapping_page(mapping, off + i, NULL);
-		if (IS_ERR(page) || page == NULL)
+		if (!page || IS_ERR(page))
 			goto free_pages;
 
-		BUG_ON(!(bitmap->pages[i] == NULL || bitmap->pages[i] == page));
+		BUG_ON(bitmap->pages[i] && bitmap->pages[i] != page);
 		bitmap->pages[i] = page;
 	}
 	return bitmap;
@@ -110,7 +111,8 @@ free_pages:
  * its return value determines whether to break out early
  */
 static int lean_bitmap_iterate(struct lean_bitmap *bitmap,
-	int (*func)(char *, uint32_t, int, void *), void *priv)
+			       int (*func)(char *, uint32_t, int, void *),
+			       void *priv)
 {
 	int i, ret;
 	struct page *page;
@@ -124,19 +126,20 @@ static int lean_bitmap_iterate(struct lean_bitmap *bitmap,
 		page = bitmap->pages[i];
 		/* A null page means this bitmap wasn't acquired with
 		 * lean_bitmap_get peoperly
+		 * TODO: Remount read-only and WARN instead
 		 */
 		BUG_ON(!page);
 
 		addr = kmap(page);
 		ret = func(addr + off, min_t(uint32_t, limit, PAGE_SIZE) - off,
-			i, priv);
+			   i, priv);
 		kunmap(page);
 	}
 	return ret;
 }
 
 static int lean_bitmap_getfree_iter(char *addr, uint32_t len, int page_nr,
-	void *priv)
+				    void *priv)
 {
 	uint32_t *used = priv;
 
@@ -243,14 +246,14 @@ uint64_t lean_count_free_sectors(struct super_block *s)
 		bitmap = lean_bitmap_get(s, i);
 		if (IS_ERR(bitmap)) {
 			lean_msg(s, KERN_WARNING,
-				"could not read band %d bitmap", i);
+				 "could not read band %d bitmap", i);
 			continue;
 		}
 		count += lean_bitmap_getfree(bitmap);
 		lean_bitmap_put(bitmap);
 	}
 	lean_msg(s, KERN_DEBUG, "sbi->sectors_free = %llu, counted = %llu",
-		sbi->sectors_free, count);
+		 sbi->sectors_free, count);
 	return count;
 #else /* LEAN_TESTING */
 	return percpu_counter_read_positive(&sbi->free_counter);
@@ -277,7 +280,7 @@ struct lean_try_alloc_data {
  * Takes data->bitmap->lock
  */
 static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
-	void *priv)
+			       void *priv)
 {
 	int i;
 	struct lean_try_alloc_data *data = priv;
@@ -289,7 +292,7 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 	if (tmp)
 		goto retry;
 
-	ptr = (char *) memscan(addr, 0, size);
+	ptr = (char *)memscan(addr, 0, size);
 	if (ptr < addr + size) {
 		tmp = (ptr - addr) * 8;
 		goto found;
@@ -301,7 +304,7 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 	 * the sector using a bitwise search in the first place
 	 */
 retry:
-	tmp = find_next_zero_bit((unsigned long *) addr, size, tmp);
+	tmp = find_next_zero_bit((unsigned long *)addr, size, tmp);
 	if (tmp > size * 8)
 		goto found;
 
@@ -329,7 +332,8 @@ found:
  * Takes bitmap->lock
  */
 static uint32_t lean_try_alloc(struct super_block *s,
-	struct lean_bitmap *bitmap, uint32_t goal, uint32_t *count)
+			       struct lean_bitmap *bitmap,
+			       uint32_t goal, uint32_t *count)
 {
 	int found = 0;
 	int goal_page_nr = goal >> PAGE_SHIFT;
@@ -344,7 +348,8 @@ static uint32_t lean_try_alloc(struct super_block *s,
 
 	/* Try searching starting from the goal */
 	found = lean_try_alloc_iter((goal >> 3) + addr + bitmap->off,
-		bitmap->len - goal_page_nr * PAGE_SIZE, goal_page_nr, &priv);
+				    bitmap->len - goal_page_nr * PAGE_SIZE,
+				    goal_page_nr, &priv);
 	if (found)
 		goto iter_found;
 
@@ -372,7 +377,7 @@ out:
  * Takes bitmap->lock(s)
  */
 uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
-	int *errp)
+			  int *errp)
 {
 	int i;
 	struct lean_bitmap *bitmap;
@@ -429,15 +434,15 @@ uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
 	 */
 	if (alloc < sbi->bitmap_size) {
 		lean_msg(s, KERN_ERR,
-			"allocated %u blocks at sector %llu, which is part of band %llu's bitmap",
-			*count, ret, band);
+			 "allocated %u blocks at sector %llu, which is part of band %llu's bitmap",
+			 *count, ret, band);
 		*errp = -EIO;
 		goto err;
 	}
 	if (ret > sbi->sectors_total) {
 		lean_msg(s, KERN_ERR,
-			"allocated %u blocks at sector %llu, which is past the end of the disk",
-			*count, ret);
+			 "allocated %u blocks at sector %llu, which is past the end of the disk",
+			 *count, ret);
 		*errp = -EIO;
 		goto err;
 	}

@@ -29,10 +29,10 @@ void lean_msg(struct super_block *s, const char *prefix, const char *fmt, ...)
 
 static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 {
-	struct lean_sb_info *sbi = (struct lean_sb_info *) de->d_sb->s_fs_info;
+	struct lean_sb_info *sbi = (struct lean_sb_info *)de->d_sb->s_fs_info;
 	uint64_t fsid;
 
-	strncpy((void *) &buf->f_type,
+	strncpy((void *)&buf->f_type,
 		LEAN_MAGIC_SUPERBLOCK, sizeof(buf->f_type));
 	buf->f_bsize = buf->f_frsize = 512;
 	buf->f_blocks = sbi->sectors_total;
@@ -40,8 +40,8 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 	/* We don't have hard inode limits, so don't bother */
 	buf->f_files = buf->f_ffree = 0;
 	/* Ripped from fs/ext2/super.c */
-	fsid = le64_to_cpup((void *) sbi->uuid) ^
-	       le64_to_cpup((void *) sbi->uuid + sizeof(uint64_t));
+	fsid = le64_to_cpup((void *)sbi->uuid) ^
+	       le64_to_cpup((void *)sbi->uuid + sizeof(uint64_t));
 	buf->f_fsid.val[0] = fsid & 0xFFFFFFFFUL;
 	buf->f_fsid.val[1] = (fsid >> 32) & 0xFFFFFFFFUL;
 	buf->f_namelen = LEAN_DIR_NAME_MAX;
@@ -49,7 +49,7 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 
 #ifdef LEAN_TESTING
 	lean_msg(de->d_sb, KERN_DEBUG, "bs %llu bc %llu bms %llu",
-		sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
+		 sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
 #endif /* LEAN_TESTING */
 
 	return 0;
@@ -58,7 +58,7 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 /* From fs/ext2/super.c */
 static void lean_clear_super_error(struct super_block *s)
 {
-	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
+	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
 	struct buffer_head *sbh = sbi->sbh;
 	struct buffer_head *sbh_backup = sbi->sbh_backup;
 
@@ -72,13 +72,13 @@ static void lean_clear_super_error(struct super_block *s)
 		 * write and hope for the best.
 		 */
 		lean_msg(s, KERN_ERR,
-			"previous I/O error to superblock detected");
+			 "previous I/O error to superblock detected");
 		clear_buffer_write_io_error(sbh);
 		set_buffer_uptodate(sbh);
 	}
 	if (buffer_write_io_error(sbh_backup)) {
 		lean_msg(s, KERN_ERR,
-			"previous I/O error to superblock backup detected");
+			 "previous I/O error to superblock backup detected");
 		clear_buffer_write_io_error(sbh_backup);
 		set_buffer_uptodate(sbh_backup);
 	}
@@ -92,11 +92,11 @@ static void lean_clear_super_error(struct super_block *s)
 static int lean_sync_super(struct super_block *s, int wait)
 {
 	int err = 0;
-	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
+	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
 	struct lean_superblock *sb =
-		(struct lean_superblock *) sbi->sbh->b_data;
+		(struct lean_superblock *)sbi->sbh->b_data;
 	struct lean_superblock *sb_backup =
-		(struct lean_superblock *) sbi->sbh_backup->b_data;
+		(struct lean_superblock *)sbi->sbh_backup->b_data;
 
 	lean_clear_super_error(s);
 
@@ -115,16 +115,16 @@ static int lean_sync_super(struct super_block *s, int wait)
 	if (wait) {
 		sync_dirty_buffer(sbi->sbh);
 		sync_dirty_buffer(sbi->sbh_backup);
-		if (buffer_req(sbi->sbh)
-			&& !buffer_uptodate(sbi->sbh)) {
+		if (buffer_req(sbi->sbh) &&
+		    !buffer_uptodate(sbi->sbh)) {
 			lean_msg(s, KERN_WARNING,
-				"unable to sync super block");
+				 "unable to sync super block");
 			err = -EIO;
 		}
-		if (buffer_req(sbi->sbh_backup)
-			&& !buffer_uptodate(sbi->sbh_backup)) {
+		if (buffer_req(sbi->sbh_backup) &&
+		    !buffer_uptodate(sbi->sbh_backup)) {
 			lean_msg(s, KERN_WARNING,
-				"unable to sync super block backup");
+				 "unable to sync super block backup");
 			err = -EIO;
 		}
 	}
@@ -138,7 +138,7 @@ static int lean_sync_super(struct super_block *s, int wait)
 static int lean_sync_fs(struct super_block *s, int wait)
 {
 	int err;
-	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
+	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
 
 	if (sbi->state & LEAN_STATE_CLEAN) {
 		err = mutex_lock_interruptible(&sbi->lock);
@@ -166,7 +166,7 @@ int lean_write_super(struct super_block *s)
  */
 static void lean_put_super(struct super_block *s)
 {
-	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
+	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
 
 	if (!(s->s_flags & MS_RDONLY)) {
 		if (mutex_lock_interruptible(&sbi->lock)) {
@@ -214,7 +214,7 @@ static void lean_inode_free(struct inode *inode)
 
 static void lean_inode_init_once(void *i)
 {
-	struct lean_ino_info *inode = (struct lean_ino_info *) i;
+	struct lean_ino_info *inode = (struct lean_ino_info *)i;
 
 	inode_init_once(&inode->vfs_inode);
 }
@@ -222,9 +222,11 @@ static void lean_inode_init_once(void *i)
 static int __init lean_init_inodecache(void)
 {
 	lean_inode_cache = kmem_cache_create("lean_inode_cache",
-			sizeof(struct lean_ino_info), 0,
-			(SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD | SLAB_ACCOUNT),
-			lean_inode_init_once);
+					     sizeof(struct lean_ino_info), 0,
+					     (SLAB_RECLAIM_ACCOUNT |
+					      SLAB_MEM_SPREAD |
+					      SLAB_ACCOUNT),
+					     lean_inode_init_once);
 	if (!lean_inode_cache)
 		return -ENOMEM;
 	return 0;
@@ -262,8 +264,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	struct buffer_head *bh;
 	struct inode *root;
 	struct lean_superblock *sb;
-	struct lean_sb_info *sbi = kmalloc(sizeof(struct lean_sb_info),
-		GFP_KERNEL);
+	struct lean_sb_info *sbi = kmalloc(sizeof(*sbi), GFP_KERNEL);
 
 	if (!sbi)
 		return -ENOMEM;
@@ -278,14 +279,14 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 		bh = sb_bread(s, sec);
 		if (!bh) {
 			lean_msg(s, KERN_ERR,
-				"unable to read sector %d on dev %s",
-				sec, s->s_id);
+				 "unable to read sector %d on dev %s",
+				 sec, s->s_id);
 			ret = -EIO;
 			goto failure;
 		} else {
-			sb = (struct lean_superblock *) bh->b_data;
+			sb = (struct lean_superblock *)bh->b_data;
 			if (!memcmp(sb->magic, LEAN_MAGIC_SUPERBLOCK,
-				sizeof(sb->magic)))
+				    sizeof(sb->magic)))
 				found_sb = true;
 			else
 				brelse(bh);
@@ -300,11 +301,11 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 
 	lean_msg(s, KERN_INFO, "found superblock at sector %d", sec);
 
-	s->s_magic = le32_to_cpup((__le32 *) sb->magic);
-	if (sb->fs_version_major != LEAN_VERSION_MAJOR
-		|| sb->fs_version_minor != LEAN_VERSION_MINOR) {
+	s->s_magic = le32_to_cpup((__le32 *)sb->magic);
+	if (sb->fs_version_major != LEAN_VERSION_MAJOR ||
+	    sb->fs_version_minor != LEAN_VERSION_MINOR) {
 		lean_msg(s, KERN_ERR, "unsupported version %u.%u",
-			sb->fs_version_major, sb->fs_version_minor);
+			 sb->fs_version_major, sb->fs_version_minor);
 		goto bh_failure;
 	}
 	if (lean_superblock_to_info(sb, sbi)) {
@@ -323,7 +324,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 		sbi->sbh_backup = sb_bread(s, sbi->super_backup);
 		if (!sbi->sbh_backup) {
 			lean_msg(s, KERN_WARNING,
-				"cannot read backup superblock, remounting read-only");
+				 "cannot read backup superblock, remounting read-only");
 			s->s_flags |= MS_RDONLY;
 		}
 	}
@@ -334,8 +335,8 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	 */
 	if (sbi->log2_band_sectors < 12 || sbi->log2_band_sectors > 32) {
 		lean_msg(s, KERN_ERR,
-			"invalid number of sectors per band: %llu",
-			sbi->band_sectors);
+			 "invalid number of sectors per band: %llu",
+			 sbi->band_sectors);
 		goto backup_failure;
 	}
 	/* Truncate the size of the disk to a multiple of 8 sectors
@@ -357,8 +358,8 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	s->s_op = &lean_super_ops;
 	mutex_init(&sbi->lock);
 
-	ret = percpu_counter_init(&sbi->free_counter,
-		sbi->sectors_free, GFP_KERNEL);
+	ret = percpu_counter_init(&sbi->free_counter, sbi->sectors_free,
+				  GFP_KERNEL);
 	if (ret)
 		goto backup_failure;
 
@@ -407,11 +408,10 @@ failure:
 }
 
 static struct dentry *lean_mount(struct file_system_type *fs_type, int flags,
-	const char *dev_name, void *data)
+				 const char *dev_name, void *data)
 {
 	return mount_bdev(fs_type, flags, dev_name, data, lean_fill_super);
 }
-
 
 static struct file_system_type lean_fs_type = {
 	.owner = THIS_MODULE,

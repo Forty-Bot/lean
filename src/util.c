@@ -6,7 +6,7 @@
 #ifdef __KERNEL__
 #include <linux/bug.h>
 #include <linux/kernel.h>
-#define lean_assert(x) BUG_ON(!(x))
+#define lean_assert(x) WARN_ON_ONCE(!(x))
 #define tole16 cpu_to_le16
 #define tole32 cpu_to_le32
 #define tole64 cpu_to_le64
@@ -33,7 +33,7 @@ uint32_t lean_checksum(const void *data, size_t size)
 {
 	size_t i;
 	uint32_t res = 0;
-	const uint32_t *d = (const uint32_t *) data;
+	const uint32_t *d = (const uint32_t *)data;
 
 	lean_assert((size & (sizeof(uint32_t) - 1)) == 0);
 
@@ -47,7 +47,7 @@ uint32_t lean_checksum(const void *data, size_t size)
  * Extract superblock info from a superblock in disk format
  */
 int lean_superblock_to_info(const struct lean_superblock *sb,
-	struct lean_sb_info *sbi)
+			    struct lean_sb_info *sbi)
 {
 	int ret = 0;
 	uint32_t cs;
@@ -86,7 +86,7 @@ int lean_superblock_to_info(const struct lean_superblock *sb,
  * Always succeeds
  */
 void lean_info_to_superblock(const struct lean_sb_info *sbi,
-	struct lean_superblock *sb)
+			     struct lean_superblock *sb)
 {
 	memcpy(sb->magic, LEAN_MAGIC_SUPERBLOCK, sizeof(sb->magic));
 	sb->fs_version_major = LEAN_VERSION_MAJOR;

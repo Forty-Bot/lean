@@ -9,7 +9,7 @@
 #include <linux/writeback.h>
 
 static int lean_get_block(struct inode *inode, sector_t sec,
-	struct buffer_head *bh_result, int create)
+			  struct buffer_head *bh_result, int create)
 {
 	int i = 0;
 	struct lean_ino_info *li = LEAN_I(inode);
@@ -19,7 +19,7 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 	if (li->extent_count < 1 || li->extent_count > LEAN_INODE_EXTENTS) {
 		/* Corrupt inode! */
 		lean_msg(inode->i_sb, KERN_WARNING, "corrupt inode %lu",
-			inode->i_ino);
+			 inode->i_ino);
 		return -EIO;
 	}
 
@@ -50,7 +50,7 @@ static int lean_readpage(struct file *file, struct page *page)
 }
 
 static int lean_readpages(struct file *file, struct address_space *mapping,
-	struct list_head *pages, unsigned int nr_pages)
+			  struct list_head *pages, unsigned int nr_pages)
 {
 	return mpage_readpages(mapping, pages, nr_pages, lean_get_block);
 }
@@ -87,7 +87,7 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 	if (!bh)
 		goto bad_inode;
 
-	raw = (struct lean_inode *) bh->b_data;
+	raw = (struct lean_inode *)bh->b_data;
 	if (memcmp(raw->magic, LEAN_MAGIC_INODE, sizeof(raw->magic))) {
 		brelse(bh);
 		ret = -EUCLEAN;
@@ -189,14 +189,14 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 	if (!bh)
 		return -EIO;
 
-	raw = (struct lean_inode *) bh->b_data;
+	raw = (struct lean_inode *)bh->b_data;
 	lean_info_to_inode(li, raw);
 	mark_buffer_dirty(bh);
 	if (wbc->sync_mode == WB_SYNC_ALL) {
 		sync_dirty_buffer(bh);
 		if (buffer_req(bh) && !buffer_uptodate(bh)) {
 			lean_msg(s, KERN_WARNING, "unable to sync inode %lu",
-				ino);
+				 ino);
 			ret = -EIO;
 		}
 	}

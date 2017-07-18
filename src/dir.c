@@ -33,6 +33,7 @@ static void lean_put_page(struct page *page)
 		put_page(page);
 }
 
+/* TODO: Remount as read-only on corrupt directory entry */
 static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 {
 	int ret = 0;
@@ -57,7 +58,7 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 
 		if (IS_ERR(page)) {
 			lean_msg(s, KERN_ERR, "bad page in inode %lu",
-				inode->i_ino);
+				 inode->i_ino);
 			ctx->pos += PAGE_SIZE - off;
 			return PTR_ERR(next);
 		}
@@ -69,8 +70,8 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 			/* Sanity checks */
 			if (unlikely(!de->entry_length)) {
 				lean_msg(s, KERN_ERR,
-					"zero-length directory entry in inode %lu",
-					inode->i_ino);
+					 "zero-length directory entry in inode %lu",
+					 inode->i_ino);
 				lean_put_page(page);
 				return -EIO;
 			}
@@ -85,15 +86,15 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 			length = le16_to_cpu(de->name_length);
 			if (unlikely(!length)) {
 				lean_msg(s, KERN_ERR,
-					"zero-length directory name in inode %lu",
-					inode->i_ino);
+					 "zero-length directory name in inode %lu",
+					 inode->i_ino);
 				lean_put_page(page);
 				return -EIO;
 			} else if (unlikely(length > de->entry_length
 				* sizeof(struct lean_dir_entry) - 12)) {
 				lean_msg(s, KERN_ERR,
-					"directory name longer than directory entry in inode %lu",
-					inode->i_ino);
+					 "directory name longer than directory entry in inode %lu",
+					 inode->i_ino);
 				lean_put_page(page);
 				return -EIO;
 			}
@@ -103,8 +104,8 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 				* sizeof(struct lean_dir_entry)
 				+ n * PAGE_SIZE)) {
 				lean_msg(s, KERN_ERR,
-					"directory entry extends past directory size in inode %lu",
-					inode->i_ino);
+					 "directory entry extends past directory size in inode %lu",
+					 inode->i_ino);
 				lean_put_page(page);
 				return -EIO;
 			}
@@ -126,8 +127,8 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 				next = lean_get_page(inode, n + 1);
 				if (IS_ERR(next)) {
 					lean_msg(s, KERN_ERR,
-						"bad page in inode %lu",
-						inode->i_ino);
+						 "bad page in inode %lu",
+						 inode->i_ino);
 					lean_put_page(page);
 					return PTR_ERR(next);
 				}
@@ -136,7 +137,7 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 					page_address(next), length - remaining);
 			}
 			if (!dir_emit(ctx, de->name, length,
-				le64_to_cpu(de->inode),
+				      le64_to_cpu(de->inode),
 				LEAN_DT(de->type))) {
 				if (next)
 					lean_put_page(next);
@@ -171,9 +172,9 @@ struct lean_filename_match {
 };
 
 static int lean_match(struct dir_context *ctx, const char *name, int len,
-	loff_t off, u64 ino, unsigned int type)
+		      loff_t off, u64 ino, unsigned int type)
 {
-	struct lean_filename_match *match = (struct lean_filename_match *) ctx;
+	struct lean_filename_match *match = (struct lean_filename_match *)ctx;
 
 	if (len != match->len)
 		return 0;
@@ -186,7 +187,7 @@ static int lean_match(struct dir_context *ctx, const char *name, int len,
 }
 
 static struct dentry *lean_lookup(struct inode *dir, struct dentry *de,
-	unsigned int flags)
+				  unsigned int flags)
 {
 	int err;
 	ino_t ino;

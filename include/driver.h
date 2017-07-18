@@ -34,6 +34,20 @@ static inline unsigned int LEAN_DT(enum lean_file_type type)
 	}
 }
 
+/*
+ * Keeps track of a band-sized chunk of pages backed by the sector bitmap
+ * off is only non-zero if len is less than PAGE_SIZE. This is because multiple
+ * bands worth of bitmap may be located within one page
+ */
+struct lean_bitmap {
+	/* protects writes (but not reads) to both ->free and ->pages */
+	spinlock_t lock;
+	uint32_t off;
+	uint32_t free;
+	uint32_t len;
+	struct page *pages[];
+};
+
 #define lean_set_bit_atomic ext2_set_bit_atomic
 #define lean_clear_bit_atomic ext2_clear_bit_atomic
 
@@ -41,20 +55,13 @@ static inline unsigned int LEAN_DT(enum lean_file_type type)
 	>> PAGE_SHIFT)
 #define LEAN_BITMAP_SIZE(sbi) (sizeof(struct lean_bitmap) \
 	+ LEAN_BITMAP_PAGES(sbi) * sizeof(struct page *))
-#define LEAN_BITMAP(sbi, band) (((void *) sbi->bitmap_cache) \
-	+ band * LEAN_BITMAP_SIZE(sbi))
-#define LEAN_ROUND_PAGE(s) ((s + ~PAGE_MASK) & PAGE_MASK)
+static inline struct lean_bitmap *LEAN_BITMAP(struct lean_sb_info *sbi,
+					      uint64_t band)
+{
+	return sbi->bitmap_cache + band * LEAN_BITMAP_SIZE(sbi);
+}
 
-/*
- * ->lock protects writes (but not reads) to both ->free and ->pages
- */
-struct lean_bitmap {
-	spinlock_t lock;
-	uint32_t off;
-	uint32_t free;
-	uint32_t len;
-	struct page *pages[];
-};
+#define LEAN_ROUND_PAGE(s) (((s) + ~PAGE_MASK) & PAGE_MASK)
 
 /* super.c */
 struct inode *lean_inode_alloc(struct super_block *s);
@@ -87,6 +94,6 @@ int lean_bitmap_cache_init(struct super_block *s);
 void lean_bitmap_cache_destroy(struct super_block *s);
 uint64_t lean_count_free_sectors(struct super_block *s);
 uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
-	int *errp);
+			  int *errp);
 
 #endif /* DRIVER_H */
