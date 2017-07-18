@@ -34,6 +34,9 @@ static inline unsigned int LEAN_DT(enum lean_file_type type)
 	}
 }
 
+#define lean_set_bit_atomic ext2_set_bit_atomic
+#define lean_clear_bit_atomic ext2_clear_bit_atomic
+
 #define LEAN_BITMAP_PAGES(sbi) (((sbi)->bitmap_size * LEAN_SEC + ~PAGE_MASK) \
 	>> PAGE_SHIFT)
 #define LEAN_BITMAP_SIZE(sbi) (sizeof(struct lean_bitmap) \
@@ -80,5 +83,7 @@ uint32_t lean_bitmap_getfree(struct lean_bitmap *bitmap);
 int lean_bitmap_cache_init(struct super_block *s);
 void lean_bitmap_cache_destroy(struct super_block *s);
 uint64_t lean_count_free_sectors(struct super_block *s);
+uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
+	int *errp);
 
 #endif /* DRIVER_H */
