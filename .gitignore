@@ -7,3 +7,7 @@
 *.ko
 *.cmd
 .depend
+*/.tmp_versions/*
+Module.symvers
+modules.order
+tags
