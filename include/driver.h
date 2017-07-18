@@ -5,7 +5,7 @@
 
 #include <linux/fs.h>
 
-/* 
+/*
  * Locks *must* be taken in the following order:
  * sbi->lock
  * bitmap->lock
@@ -76,8 +76,11 @@ extern const struct inode_operations lean_dir_inode_ops;
 
 /* balloc.c */
 void __lean_bitmap_put(struct lean_bitmap *bitmap, int count);
-#define lean_bitmap_put(bitmap) \
-	__lean_bitmap_put((bitmap), LEAN_ROUND_PAGE((bitmap)->len) >> PAGE_SHIFT)
+static inline void lean_bitmap_put(struct lean_bitmap *bitmap)
+{
+	__lean_bitmap_put(bitmap, LEAN_ROUND_PAGE(bitmap->len) >> PAGE_SHIFT);
+}
+
 struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band);
 uint32_t lean_bitmap_getfree(struct lean_bitmap *bitmap);
 int lean_bitmap_cache_init(struct super_block *s);

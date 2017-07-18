@@ -31,7 +31,7 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 {
 	struct lean_sb_info *sbi = (struct lean_sb_info *) de->d_sb->s_fs_info;
 	uint64_t fsid;
-	
+
 	strncpy((void *) &buf->f_type,
 		LEAN_MAGIC_SUPERBLOCK, sizeof(buf->f_type));
 	buf->f_bsize = buf->f_frsize = 512;
@@ -93,21 +93,22 @@ static int lean_sync_super(struct super_block *s, int wait)
 {
 	int err = 0;
 	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
-	struct lean_superblock *sb = (struct lean_superblock *) sbi->sbh->b_data;
+	struct lean_superblock *sb =
+		(struct lean_superblock *) sbi->sbh->b_data;
 	struct lean_superblock *sb_backup =
 		(struct lean_superblock *) sbi->sbh_backup->b_data;
 
 	lean_clear_super_error(s);
-	
+
 	err = mutex_lock_interruptible(&sbi->lock);
 	if (err)
 		return err;
-	
+
 	sbi->sectors_free = lean_count_free_sectors(s);
 	lean_info_to_superblock(sbi, sb);
-	
+
 	mutex_unlock(&sbi->lock);
-	
+
 	memcpy(sb_backup, sb, sizeof(*sb_backup));
 	mark_buffer_dirty(sbi->sbh);
 	mark_buffer_dirty(sbi->sbh_backup);
@@ -138,7 +139,7 @@ static int lean_sync_fs(struct super_block *s, int wait)
 {
 	int err;
 	struct lean_sb_info *sbi = (struct lean_sb_info *) s->s_fs_info;
-	
+
 	if (sbi->state & LEAN_STATE_CLEAN) {
 		err = mutex_lock_interruptible(&sbi->lock);
 		if (err)
@@ -153,8 +154,9 @@ static int lean_sync_fs(struct super_block *s, int wait)
  * Synchronizes the filesystem to disk if it is mounted r/w
  * May take s->s_fs_info->lock
  */
-int lean_write_super(struct super_block *s) {
-	if(!(s->s_flags & MS_RDONLY))
+int lean_write_super(struct super_block *s)
+{
+	if (!(s->s_flags & MS_RDONLY))
 		return lean_sync_fs(s, true);
 	return 0;
 }
@@ -170,7 +172,7 @@ static void lean_put_super(struct super_block *s)
 		if (mutex_lock_interruptible(&sbi->lock)) {
 			lean_msg(s, KERN_WARNING, "unable to get super lock");
 			goto sync_failed;
-		}	
+		}
 		sbi->state |= LEAN_STATE_CLEAN;
 		mutex_unlock(&sbi->lock);
 		if (lean_sync_super(s, true))
@@ -247,9 +249,11 @@ static struct super_operations const lean_super_ops = {
 static int lean_fill_super(struct super_block *s, void *data, int silent)
 {
 #define lean_msg(s, prefix, fmt, ...) \
-	if (!silent) { \
-		lean_msg(s, prefix, fmt, ##__VA_ARGS__); \
-	}
+	do { \
+		if (!silent) { \
+			lean_msg(s, prefix, fmt, ##__VA_ARGS__); \
+		} \
+	} while (0)
 
 	bool found_sb = false;
 	int diff;
@@ -322,7 +326,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 				"cannot read backup superblock, remounting read-only");
 			s->s_flags |= MS_RDONLY;
 		}
-	}	
+	}
 	/* The lower limit is spec specified (must use at least one sector for
 	 * each bitmap chunk). The upper limit is not, however, but we impose
 	 * it so we can store the number of free sectors as an unsigned 32-bit

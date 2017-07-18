@@ -22,7 +22,7 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 			inode->i_ino);
 		return -EIO;
 	}
-	
+
 	while (sec > size && i < li->extent_count) {
 		extent = li->extent_starts[i];
 		size = li->extent_sizes[i];

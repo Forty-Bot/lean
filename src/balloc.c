@@ -122,13 +122,13 @@ static int lean_bitmap_iterate(struct lean_bitmap *bitmap,
 		i < LEAN_ROUND_PAGE(bitmap->len) >> PAGE_SHIFT && !ret;
 		i++, off = 0, limit -= PAGE_SIZE) {
 		page = bitmap->pages[i];
-		/* A null page means this bitmap wasn't aquired with
+		/* A null page means this bitmap wasn't acquired with
 		 * lean_bitmap_get peoperly
 		 */
 		BUG_ON(!page);
 
 		addr = kmap(page);
-		ret = func(addr + off, min(limit, (uint32_t) PAGE_SIZE) - off,
+		ret = func(addr + off, min_t(uint32_t, limit, PAGE_SIZE) - off,
 			i, priv);
 		kunmap(page);
 	}
@@ -319,7 +319,7 @@ found:
 
 	lock_page(page);
 	set_page_dirty(page);
-	write_one_page(page, priv->s->s_flags & MS_SYNCHRONOUS);
+	write_one_page(page, data->s->s_flags & MS_SYNCHRONOUS);
 	return i;
 }
 
@@ -328,14 +328,15 @@ found:
  * entire band if necessary
  * Takes bitmap->lock
  */
-static uint32_t lean_try_alloc(struct super_block *s, struct lean_bitmap *bitmap,
-	uint32_t goal, uint32_t *count)
+static uint32_t lean_try_alloc(struct super_block *s,
+	struct lean_bitmap *bitmap, uint32_t goal, uint32_t *count)
 {
 	int found = 0;
 	int goal_page_nr = goal >> PAGE_SHIFT;
 	struct page *goal_page = bitmap->pages[goal_page_nr];
 	char *addr = kmap(goal_page);
 	struct lean_try_alloc_data priv;
+
 	priv.s = s;
 	priv.bitmap = bitmap;
 	priv.count = *count;
