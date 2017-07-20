@@ -11,3 +11,4 @@
 Module.symvers
 modules.order
 tags
+*.mod.c
