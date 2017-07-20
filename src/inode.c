@@ -12,17 +12,14 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 			  struct buffer_head *bh_result, int create)
 {
 	int i = 0;
+	int ret;
 	struct lean_ino_info *li = LEAN_I(inode);
-	uint64_t extent = li->extent_starts[i];
-	uint32_t size = li->extent_sizes[i];
+	uint64_t extent;
+	uint32_t size;
 
-	if (li->extent_count < 1 || li->extent_count > LEAN_INODE_EXTENTS) {
-		/* Corrupt inode! */
-		lean_msg(inode->i_sb, KERN_WARNING, "corrupt inode %lu",
-			 inode->i_ino);
-		return -EIO;
-	}
-
+	down_read(li->alloc_lock);
+	extent = li->extent_starts[i];
+	size = li->extent_sizes[i];
 	while (sec > size && i < li->extent_count) {
 		extent = li->extent_starts[i];
 		size = li->extent_sizes[i];
@@ -30,18 +27,27 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 		i++;
 	}
 	/* Make sure we have extents left in the inode */
-	if (i == li->extent_count)
-		return -EFBIG;
+	if (i == li->extent_count) {
+		ret = -EFBIG;
+		goto out;
+	}
 
 	if (sec > li->sector_count) {
-		if (!create)
-			return -ENXIO;
+		if (!create) {
+			ret = -ENXIO;
+			goto out;
+		}
 		/* TODO: allocate sector */
-		return -ENXIO;
+		ret = -ENXIO;
+		goto out;
 	}
 
 	map_bh(bh_result, inode->i_sb, extent + sec);
-	return 0;
+	ret = 0;
+
+out:
+	up_read(&li->alloc_lock);
+	return ret;
 }
 
 static int lean_readpage(struct file *file, struct page *page)
@@ -91,16 +97,21 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 	if (memcmp(raw->magic, LEAN_MAGIC_INODE, sizeof(raw->magic))) {
 		brelse(bh);
 		ret = -EUCLEAN;
-		goto bad_inode;
+		goto bh_bad_inode;
 	}
 
 	if (lean_inode_to_info(raw, li)) {
 		brelse(bh);
 		ret = -EUCLEAN;
+		goto bh_bad_inode;
+	}
+	brelse(bh);
+
+	if (li->extent_count < 1 || li->extent_count > LEAN_INODE_EXTENTS) {
+		lean_msg(s, KERN_WARNING, "corrupt inode %lu", inode->i_ino);
+		ret = -EUCLEAN;
 		goto bad_inode;
 	}
-
-	brelse(bh);
 
 	inode->i_mode = li->attr & LIA_POSIX_MASK;
 	if (LIA_ISFMT_REG(li->attr))
@@ -139,9 +150,13 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 		inode->i_fop = &lean_dir_ops;
 	}
 
+	init_rwsem(&li->alloc_lock);
+
 	unlock_new_inode(inode);
 	return inode;
 
+bh_bad_inode:
+	brelse(bh);
 bad_inode:
 	iget_failed(inode);
 	return ERR_PTR(ret);
@@ -159,6 +174,10 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 
 	if (ino < sbi->root || ino > sbi->sectors_total)
 		return -EINVAL;
+
+	bh = sb_bread(s, ino);
+	if (!bh)
+		return -EIO;
 
 	li->attr = (li->attr & ~LIA_POSIX_MASK)
 		| (inode->i_mode & LIA_POSIX_MASK);
@@ -183,14 +202,14 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 	li->time_status = lean_time(inode->i_ctime);
 	li->time_modify = lean_time(inode->i_mtime);
 	li->size = inode->i_size;
-	li->sector_count = inode->i_blocks;
 
-	bh = sb_bread(s, ino);
-	if (!bh)
-		return -EIO;
+	down_read(&li->alloc_lock);
+	li->sector_count = inode->i_blocks;
 
 	raw = (struct lean_inode *)bh->b_data;
 	lean_info_to_inode(li, raw);
+	up_read(&li->alloc_lock);
+
 	mark_buffer_dirty(bh);
 	if (wbc->sync_mode == WB_SYNC_ALL) {
 		sync_dirty_buffer(bh);

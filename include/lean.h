@@ -171,6 +171,12 @@ struct lean_ino_info {
 	uint64_t extent_starts[LEAN_INODE_EXTENTS];
 	uint32_t extent_sizes[LEAN_INODE_EXTENTS];
 #ifdef __KERNEL__
+	/*
+	 * Protects block allocation data (extent_*, indirect_*, sector_count)
+	 * rwsem instead of mutex, as we expect more file accesses than writes
+	 * TODO: profile and verify this
+	 */
+	struct rwsem alloc_lock;
 	struct inode vfs_inode;
 #endif
 };
@@ -206,8 +212,8 @@ enum lean_inode_attr {
 	LIA_SYNC = 1 << 15, /* Writes must be committed immediately */
 	LIA_NOATIME = 1 << 16, /* Do not update access time */
 	LIA_IMMUTABLE = 1 << 17, /* Do not move file sectors */
-	/* Keep preallocated sectors beyond inode.size after file is closed */
-	LIA_PREALLOC = 1 << 18,
+	LIA_PREALLOC = 1 << 18, /* Keep preallocated sectors beyond inode.size
+				   after file is closed */
 	LIA_INLINE = 1 << 19, /* Inline extended attributes in first sector */
 	/* Filetype attributes */
 	LIA_FMT_MASK = (int)(7u << 29), /* Mask of file type */
