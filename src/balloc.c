@@ -460,3 +460,85 @@ err:
 	lean_bitmap_put(bitmap);
 	return 0;
 }
+
+struct lean_free_sectors_data {
+	struct lean_bitmap *bitmap;
+	uint32_t start;
+	uint32_t count;
+	bool sync;
+};
+
+static int lean_free_sectors_iter(char *addr, uint32_t len, int page_nr,
+				  void *priv)
+{
+	int i;
+	struct lean_free_sectors_data *data = priv;
+	struct page *page = data->bitmap->pages[page_nr];
+
+	for (i = 0; i < data->count && data->start + i < len * 8; i++) {
+		if (!lean_clear_bit_atomic(&data->bitmap->lock,
+					   data->start + i, addr)) {
+			/*
+			 * Double free error! Store the offending sector in
+			 * data->start for later retrieval. We still need to
+			 * update count to keep bitmap->free accurate
+			 */
+			data->start = data->start + i + page_nr * PAGE_SIZE;
+			data->count -= i;
+			return -EINVAL;
+		}
+	}
+
+	lock_page(page);
+	set_page_dirty(page);
+	write_one_page(page, data->sync);
+
+	data->start -= len * 8;
+	data->count -= i;
+
+	return !data->count;
+}
+
+void lean_free_sectors(struct super_block *s, uint64_t start, uint32_t count)
+{
+	int err;
+	struct lean_bitmap *bitmap;
+	struct lean_free_sectors_data data;
+	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
+	uint64_t band = start >> sbi->log2_band_sectors;
+	uint32_t start_band = start & (sbi->band_sectors - 1);
+
+	if (start <= sbi->root || start + count > sbi->sectors_total) {
+		lean_msg(s, KERN_ERR,
+			 "attempted to free %u blocks at sector %llu, outside the data zone",
+			 count, start);
+		return;
+	} else if (start_band < sbi->bitmap_size || start_band + count > sbi->band_sectors) {
+		lean_msg(s, KERN_ERR,
+			 "attempted to free %u blocks at sector %llu, part of the block bitmap",
+			 count, start);
+		return;
+	}
+
+	bitmap = lean_bitmap_get(s, band);
+	data.bitmap = bitmap;
+	data.start = start_band;
+	data.count = count;
+	err = lean_bitmap_iterate(bitmap, lean_free_sectors_iter, bitmap);
+	if (err == -EINVAL) {
+		lean_msg(s, KERN_ERR,
+			 "attempted to free already freed block %llu",
+			 start + (data.start - start_band));
+	} else if (data.count) {
+		lean_msg(s, KERN_WARNING,
+			 "failed to free %u sectors starting at %llu",
+			 data.count, start + (count - data.count));
+	}
+
+	spin_lock(&bitmap->lock);
+	bitmap->free += data.count;
+	spin_unlock(&bitmap->lock);
+	percpu_counter_add(&sbi->free_counter, data.count);
+
+	lean_bitmap_put(bitmap);
+}

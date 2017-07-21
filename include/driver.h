@@ -95,5 +95,6 @@ void lean_bitmap_cache_destroy(struct super_block *s);
 uint64_t lean_count_free_sectors(struct super_block *s);
 uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
 			  int *errp);
+void lean_free_sectors(struct super_block *s, uint64_t start, uint32_t count);
 
 #endif /* DRIVER_H */
