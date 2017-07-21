@@ -1,6 +1,7 @@
 #include "driver.h"
 #include "lean.h"
 
+#include <linux/blkdev.h>
 #include <linux/buffer_head.h>
 #include <linux/err.h>
 #include <linux/fs.h>
@@ -239,5 +240,77 @@ int lean_setattr(struct dentry *de, struct iattr *attr)
 	setattr_copy(inode, attr);
 	mark_inode_dirty(inode);
 
+	return ret;
+}
+
+/*
+ * This function returns the sector which is immediately after the end
+ * of the last extent in an inode
+ */
+static uint64_t lean_find_next_sector(struct inode *inode)
+{
+	struct lean_ino_info *li = LEAN_I(inode);
+
+	return li->extent_starts[li->extent_count - 1]
+		+ li->extent_sizes[li->extent_count - 1];
+}
+
+/*
+ * Must be called with LEAN_I(inode)->lock taken for writing
+ */
+int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count)
+{
+	int ret;
+	struct lean_ino_info *li = LEAN_I(inode);
+	struct super_block *s = inode->i_sb;
+	uint64_t goal = lean_find_next_sector(inode);
+
+	WARN_ON_ONCE(*count > INT_MAX);
+
+	if (*sector != goal && li->extent_count >= 6) {
+	/* No room for another extent */
+		ret = -ENXIO;
+		goto failed;
+	}
+	*sector = lean_new_sectors(s, goal, count, &ret);
+	if (ret) {
+		lean_msg(s, KERN_INFO, "failed to allocate sectors");
+		return ret;
+	}
+
+	/* Take a page from ext4's book here */
+	clean_bdev_aliases(s->s_bdev, *sector, *count);
+	ret = blkdev_issue_zeroout(s->s_bdev, *sector, *count, GFP_NOFS, 0);
+	if (ret) {
+		lean_msg(s, KERN_INFO, "failed to zero sectors");
+		goto failed;
+	}
+
+	/*
+	 * Don't worry about barriers, as no one should read from li until after
+	 * we release the write lock (implying a barrier)
+	 */
+	if (*sector == li->extent_starts[li->extent_count - 1]
+			+ li->extent_sizes[li->extent_count - 1]) {
+		li->extent_sizes[li->extent_count - 1] += *count;
+	} else {
+		/* We need to add another extent */
+		if (li->extent_count >= 6) {
+			lean_msg(s, KERN_INFO, "cannot create extent");
+			ret = -ENXIO;
+			goto failed;
+		}
+		li->extent_starts[li->extent_count] = *sector;
+		li->extent_sizes[li->extent_count] = *count;
+		li->extent_count++;
+	}
+	li->sector_count += *count;
+
+	inode_add_bytes(inode, *count * LEAN_SEC);
+	mark_inode_dirty(inode);
+	return ret;
+
+failed:
+	lean_free_sectors(s, *sector, *count);
 	return ret;
 }

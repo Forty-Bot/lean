@@ -27,7 +27,7 @@ int write_at_sector_mmap(int fd, uint64_t sec, const void *buf, size_t n)
 		length = lseek(fd, 0L, SEEK_END);
 		if (length < 0)
 			return -1;
-		
+
 		mmap_addr = mmap(NULL, length, PROT_WRITE, MAP_SHARED, fd, 0);
 		if (mmap_addr == MAP_FAILED)
 			return -1;

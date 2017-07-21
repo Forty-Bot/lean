@@ -72,6 +72,7 @@ void lean_msg(struct super_block *s, const char *prefix, const char *fmt, ...);
 struct inode *lean_iget(struct super_block *s, uint64_t ino);
 int lean_write_inode(struct inode *inode, struct writeback_control *wbc);
 int lean_setattr(struct dentry *de, struct iattr *attr);
+int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count);
 
 /* file.c */
 extern const struct file_operations lean_file_ops;
