@@ -204,7 +204,7 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc,
 	memset(root_ino, 0, sizeof(*root_ino) + data_size);
 
 	root->extent_count = 1;
-	root->link_count = 1;
+	root->link_count = 2;
 	root->uid = getuid();
 	root->gid = getgid();
 	root->attr = LIA_RUSR | LIA_WUSR | LIA_XUSR |
@@ -308,7 +308,7 @@ int main(int argc, char **argv)
 	long bands;
 	long band_sec; /* Sectors in a band */
 	long new_band_sec; /* Possible new value of sectors in a band */
-	long prealloc = 1; /* Sectors to preallocate */
+	long prealloc = 8; /* Sectors to preallocate */
 	long sb_offset = 1; /* Sector the suberblock resides in */
 	long sectors; /* Total sectors on the device */
 	off_t size; /* Size of the device in bytes */
@@ -422,12 +422,10 @@ int main(int argc, char **argv)
 		"Sectors:                     %lu\n"
 		"Bands :                      %lu\n"
 		"Sectors per band:            %lu\n"
-		"Superblock offset:           %lu\n"
-		"Default preallocated sectors %lu\n"
 		"UUID:                        %s\n"
 		"Volume label:                %s\n",
-		device, size, sectors, bands, band_sec, sb_offset,
-		prealloc, uuid_string, volume_name);
+		device, size, sectors, bands, band_sec, uuid_string,
+		volume_name);
 
 	/* Compute log2(band_sec) */
 	while (band_sec >>= 1)
