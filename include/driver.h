@@ -58,7 +58,7 @@ struct lean_bitmap {
 static inline struct lean_bitmap *LEAN_BITMAP(struct lean_sb_info *sbi,
 					      uint64_t band)
 {
-	return sbi->bitmap_cache + band * LEAN_BITMAP_SIZE(sbi);
+	return ((void *)sbi->bitmap_cache) + band * LEAN_BITMAP_SIZE(sbi);
 }
 
 #define LEAN_ROUND_PAGE(s) (((s) + ~PAGE_MASK) & PAGE_MASK)
