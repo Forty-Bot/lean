@@ -17,7 +17,7 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 	uint64_t extent;
 	uint32_t size;
 
-	down_read(li->alloc_lock);
+	down_read(&li->alloc_lock);
 	extent = li->extent_starts[i];
 	size = li->extent_sizes[i];
 	while (sec > size && i < li->extent_count) {
@@ -139,7 +139,7 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 	inode->i_ctime = lean_timespec(li->time_status);
 	inode->i_mtime = lean_timespec(li->time_modify);
 	inode->i_size = li->size;
-	inode->i_blocks = li->sector_count;
+	inode_set_bytes(inode, li->sector_count * LEAN_SEC);
 
 	inode->i_mapping->a_ops = &lean_aops;
 	if (S_ISREG(inode->i_mode)) {

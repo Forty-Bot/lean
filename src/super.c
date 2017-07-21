@@ -29,14 +29,15 @@ void lean_msg(struct super_block *s, const char *prefix, const char *fmt, ...)
 
 static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 {
-	struct lean_sb_info *sbi = (struct lean_sb_info *)de->d_sb->s_fs_info;
+	struct super_block *s = de->d_sb;
+	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
 	uint64_t fsid;
 
 	strncpy((void *)&buf->f_type,
 		LEAN_MAGIC_SUPERBLOCK, sizeof(buf->f_type));
 	buf->f_bsize = buf->f_frsize = 512;
 	buf->f_blocks = sbi->sectors_total;
-	buf->f_bfree = buf->f_bavail = lean_count_free_sectors(de->d_sb);
+	buf->f_bfree = buf->f_bavail = lean_count_free_sectors(s);
 	/* We don't have hard inode limits, so don't bother */
 	buf->f_files = buf->f_ffree = 0;
 	/* Ripped from fs/ext2/super.c */
@@ -45,10 +46,10 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 	buf->f_fsid.val[0] = fsid & 0xFFFFFFFFUL;
 	buf->f_fsid.val[1] = (fsid >> 32) & 0xFFFFFFFFUL;
 	buf->f_namelen = LEAN_DIR_NAME_MAX;
-	buf->f_flags = de->d_sb->s_flags;
+	buf->f_flags = s->s_flags;
 
 #ifdef LEAN_TESTING
-	lean_msg(de->d_sb, KERN_DEBUG, "bs %llu bc %llu bms %llu",
+	lean_msg(s, KERN_DEBUG, "bs %llu bc %llu bms %llu",
 		 sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
 #endif /* LEAN_TESTING */
 

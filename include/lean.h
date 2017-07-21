@@ -176,7 +176,7 @@ struct lean_ino_info {
 	 * rwsem instead of mutex, as we expect more file accesses than writes
 	 * TODO: profile and verify this
 	 */
-	struct rwsem alloc_lock;
+	struct rw_semaphore alloc_lock;
 	struct inode vfs_inode;
 #endif
 };
