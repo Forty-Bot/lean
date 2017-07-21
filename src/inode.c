@@ -9,41 +9,88 @@
 #include <linux/quotaops.h>
 #include <linux/writeback.h>
 
-static int lean_get_block(struct inode *inode, sector_t sec,
-			  struct buffer_head *bh_result, int create)
+/*
+ * Find the nth sector in an inode
+ * Modifies count on success
+ * Must be called with li->lock held
+ */
+static uint64_t lean_find_sector(struct lean_ino_info *li,
+				 uint64_t sec, uint32_t *count)
 {
 	int i = 0;
-	int ret;
-	struct lean_ino_info *li = LEAN_I(inode);
-	uint64_t extent;
-	uint32_t size;
+	uint64_t extent = li->extent_starts[i];
+	uint32_t size = li->extent_sizes[i];
 
-	down_read(&li->alloc_lock);
-	extent = li->extent_starts[i];
-	size = li->extent_sizes[i];
 	while (sec > size && i < li->extent_count) {
 		extent = li->extent_starts[i];
 		size = li->extent_sizes[i];
 		sec -= size;
 		i++;
 	}
-	/* Make sure we have extents left in the inode */
-	if (i == li->extent_count) {
-		ret = -EFBIG;
-		goto out;
+	
+	if (sec <= size) {
+		/* Try to map as many sectors as we can */
+		for (i = 1; i < *count && sec + i < size; i++);
+		*count = i;
+	} else {
+		return 0;
 	}
+	return extent + sec;
+}
 
-	if (sec > li->sector_count) {
+static int lean_get_block(struct inode *inode, sector_t sec,
+			  struct buffer_head *bh_result, int create)
+{
+	bool new = false;
+	int ret;
+	struct lean_ino_info *li = LEAN_I(inode);
+	uint64_t sector;
+	uint32_t count = bh_result->b_size >> inode->i_blkbits;
+
+	lean_msg(inode->i_sb, KERN_DEBUG, "mapping inode %lu sector %lu",
+		 inode->i_ino, sec);
+
+	down_read(&li->alloc_lock);
+	sector = lean_find_sector(li, sec, &count);
+	if (!sector) {
 		if (!create) {
 			ret = -ENXIO;
 			goto out;
 		}
-		/* TODO: allocate sector */
-		ret = -ENXIO;
-		goto out;
+		if (li->extent_count == LEAN_INODE_EXTENTS) {
+			/* We have no extents left in the inode */
+			ret = -EFBIG;
+			goto out;
+		}
+
+		up_read(&li->alloc_lock);
+		down_write(&li->alloc_lock);
+		
+		/* 
+		 * Try again in case someone else has already allocated new
+		 * sectors while we were waiting for thw write lock
+		 */
+		sector = lean_find_sector(li, sec, &count);
+		if (sector)
+			goto found;
+
+		ret = lean_extend_inode(inode, &sector, &count);
+		if (ret) {
+			up_write(&li->alloc_lock);
+			return ret;
+		}
+		new = true;
+
+found:
+		downgrade_write(&li->alloc_lock);
 	}
 
-	map_bh(bh_result, inode->i_sb, extent + sec);
+	lean_msg(inode->i_sb, KERN_DEBUG, "mapping %u sector(s) at sector %llu",
+		 count, sector);
+	map_bh(bh_result, inode->i_sb, sector);
+	bh_result->b_size = count << inode->i_blkbits;
+	if (new)
+		set_buffer_new(bh_result);
 	ret = 0;
 
 out:
@@ -62,9 +109,22 @@ static int lean_readpages(struct file *file, struct address_space *mapping,
 	return mpage_readpages(mapping, pages, nr_pages, lean_get_block);
 }
 
+static int lean_writepage(struct page *page, struct writeback_control *wbc)
+{
+	return mpage_writepage(page, lean_get_block, wbc);
+}
+
+static int lean_writepages(struct address_space *mapping,
+			   struct writeback_control *wbc)
+{
+	return mpage_writepages(mapping, wbc, lean_get_block);
+}
+
 static const struct address_space_operations lean_aops = {
 	.readpage = lean_readpage,
-	.readpages = lean_readpages
+	.readpages = lean_readpages,
+	.writepage = lean_writepage,
+	.writepages = lean_writepages
 };
 
 struct inode *lean_iget(struct super_block *s, uint64_t ino)
