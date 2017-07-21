@@ -109,6 +109,7 @@ free_pages:
  *	struct page *page -- The page this chunk came from
  *	void *priv -- Private data
  * its return value determines whether to break out early
+ * TODO: Add support for starting at any page
  */
 static int lean_bitmap_iterate(struct lean_bitmap *bitmap,
 			       int (*func)(char *, uint32_t, int, void *),
@@ -125,7 +126,7 @@ static int lean_bitmap_iterate(struct lean_bitmap *bitmap,
 		i++, off = 0, limit -= PAGE_SIZE) {
 		page = bitmap->pages[i];
 		/* A null page means this bitmap wasn't acquired with
-		 * lean_bitmap_get peoperly
+		 * lean_bitmap_get properly
 		 * TODO: Remount read-only and WARN instead
 		 */
 		BUG_ON(!page);
@@ -261,14 +262,12 @@ uint64_t lean_count_free_sectors(struct super_block *s)
 }
 
 struct lean_try_alloc_data {
-	/* Inputs */
-	struct super_block *s;
 	struct lean_bitmap *bitmap;
 	uint32_t count;
+	uint32_t sector;
+	bool sync;
 	/* Bit offset */
 	uint8_t off;
-	/* Outputs */
-	uint32_t sector;
 };
 
 /*
@@ -288,11 +287,14 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 	int tmp = data->off;
 	char *ptr;
 
+	pr_info("addr = %p size = %u, off = %u", addr, size, tmp);
+
 	/* If we have an offset, go straight to the bitwise search */
 	if (tmp)
 		goto retry;
 
 	ptr = (char *)memscan(addr, 0, size);
+	pr_info("Searching for a free byte... got %p", ptr);
 	if (ptr < addr + size) {
 		tmp = (ptr - addr) * 8;
 		goto found;
@@ -305,7 +307,8 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 	 */
 retry:
 	tmp = find_next_zero_bit((unsigned long *)addr, size, tmp);
-	if (tmp > size * 8)
+	pr_info("Searching for a free bit... got %d", tmp);
+	if (tmp < size * 8)
 		goto found;
 
 	return 0;
@@ -322,13 +325,14 @@ found:
 
 	lock_page(page);
 	set_page_dirty(page);
-	write_one_page(page, data->s->s_flags & MS_SYNCHRONOUS);
+	write_one_page(page, data->sync);
 	return i;
 }
 
 /*
  * Try to allocate a sector within a band. Start at the goal, but search the
  * entire band if necessary
+ * TODO: Maybe start the second loop at the goal's page?
  * Takes bitmap->lock
  */
 static uint32_t lean_try_alloc(struct super_block *s,
@@ -341,30 +345,33 @@ static uint32_t lean_try_alloc(struct super_block *s,
 	char *addr = kmap(goal_page);
 	struct lean_try_alloc_data priv;
 
-	priv.s = s;
 	priv.bitmap = bitmap;
 	priv.count = *count;
 	priv.off = goal & 7;
+	priv.sync = s->s_flags & MS_SYNCHRONOUS;
 
 	/* Try searching starting from the goal */
 	found = lean_try_alloc_iter((goal >> 3) + addr + bitmap->off,
-				    bitmap->len - goal_page_nr * PAGE_SIZE,
+				    bitmap->len
+					- goal_page_nr * PAGE_SIZE
+					- (goal >> 3),
 				    goal_page_nr, &priv);
-	if (found)
-		goto iter_found;
+	if (found) {
+		goal = priv.sector + (goal & ~7);
+		goto out;
+	}
 
 	/* Search the whole band */
 	priv.off = 0;
 	found = lean_bitmap_iterate(bitmap, lean_try_alloc_iter, &priv);
-	if (found)
-		goto iter_found;
+	if (found) {
+		goal = priv.sector;
+		goto out;
+	}
 
 	/* No luck */
 	goal = 0;
-	goto out;
 
-iter_found:
-	goal = priv.sector;
 out:
 	kunmap(goal_page);
 	*count = found;
@@ -392,7 +399,7 @@ uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
 		return 0;
 	}
 
-	if (goal < sbi->root || goal > sbi->sectors_total)
+	if (goal <= sbi->root || goal > sbi->sectors_total)
 		goal = sbi->root;
 	band = goal >> sbi->log2_band_sectors;
 	band_tgt = goal & (sbi->band_sectors - 1);
@@ -412,6 +419,9 @@ uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
 			continue;
 		}
 
+		lean_msg(s, KERN_DEBUG,
+			 "trying to allocate %u blocks in band %llu with goal block %u",
+			 *count, band, band_tgt);
 		alloc = lean_try_alloc(s, bitmap, band_tgt, count);
 		if (alloc)
 			break;
@@ -425,7 +435,7 @@ uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
 		return 0;
 	}
 
-	ret = band * sbi->band_sectors + alloc;
+	ret = alloc + band * sbi->band_sectors;
 
 	/* We don't free sectors if there's an error here, since something has
 	 * already gone horribly wrong, so we should try not to screw it up
@@ -434,14 +444,14 @@ uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
 	 */
 	if (alloc < sbi->bitmap_size) {
 		lean_msg(s, KERN_ERR,
-			 "allocated %u blocks at sector %llu, which is part of band %llu's bitmap",
+			 "allocated %u blocks at sector %llu, part of band %llu's bitmap",
 			 *count, ret, band);
 		*errp = -EIO;
 		goto err;
 	}
-	if (ret > sbi->sectors_total) {
+	if (ret + *count > sbi->sectors_total || ret <= sbi->root) {
 		lean_msg(s, KERN_ERR,
-			 "allocated %u blocks at sector %llu, which is past the end of the disk",
+			 "allocated %u blocks at sector %llu, outside the data zone",
 			 *count, ret);
 		*errp = -EIO;
 		goto err;
