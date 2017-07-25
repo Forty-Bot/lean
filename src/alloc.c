@@ -7,9 +7,31 @@
 #include <linux/pagemap.h>
 #include <linux/slab.h>
 
-/* We map the entire bitmap to a contiguous address_space
- * This avoid dealing with bios or buffer_heads ourselves
+/* 
+ * The LEAN filesystem stores block allocation data as a bitmap which is divided
+ * spatially on disk into groups of sectors called "bands." This structure is
+ * defined on-disk by the fields log2_band_sectors and bitmap_start in the
+ * superblock, and is represented in-memory by the lean_sb_info.bitmap inode.
+ * Our block allocation strategy revolves around allocating sectors for inodes
+ * in the same directory in the same band (and sectors for inodes from different
+ * directories in different bands). Because of this (and also to reflect the
+ * physical grouping of bitmap sectors), the bitmap is accessed through the
+ * lean_bitmap structure. 
+ *
+ * The lean_bitmap structure is used to keep track of the pages mapped to the
+ * blocks which make up the band bitmap it represents. All lean_bitmaps are
+ * allocated at mount time and stored as an array pointed to by
+ * sbi.bitmap_cache. They are accessed with lean_bitmap_get and lean_bitmap_put,
+ * which ensure the structures are initialized and the pages are
+ * reference-counted. Data modification (but not access) is protected by the 
+ * `lock` field. As iterating over a lean_bitmap is a bit of a hairy process,
+ * the preferred method is to call lean_bitmap_iterate with a suitable callback.
+ * If it is necessary to modify the bitmap data during this loop, pass the
+ * lean_bitmap as part of the private data parameter, in order to grab the lock.
+ * The `free` field must never be read directly, but instead accessed through
+ * the lean_bitmap_getfree function.
  */
+
 static int lean_get_bitmap_block(struct inode *inode, sector_t sec,
 				 struct buffer_head *bh_result, int create)
 {
@@ -106,9 +128,9 @@ free_pages:
  * func()'s arguments are:
  *	char *addr -- The starting address of this chunk
  *	uint64_t len -- The length of the chunk
- *	struct page *page -- The page this chunk came from
+ *	int page_nr -- The page index in bitmap->pages[]
  *	void *priv -- Private data
- * its return value determines whether to break out early
+ * a non-zero return value will stop iteration early and return that value
  * TODO: Add support for starting at any page
  */
 static int lean_bitmap_iterate(struct lean_bitmap *bitmap,
@@ -304,6 +326,8 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 	 * Skip the byte search on retry, since we either found a full byte
 	 * previously (and thus should retry with a bitwise search), or we found
 	 * the sector using a bitwise search in the first place
+	 * TODO: should we continue with a byte-wise search anyway? It could
+	 * help keep down fragmentation.
 	 */
 retry:
 	tmp = find_next_zero_bit((unsigned long *)addr, size, tmp);
@@ -404,7 +428,7 @@ uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
 	band = goal >> sbi->log2_band_sectors;
 	band_tgt = goal & (sbi->band_sectors - 1);
 
-	for (i = 1; i <= sbi->band_count; i++, band++) {
+	for (i = 0; i < sbi->band_count; i++, band++) {
 		if (band >= sbi->band_count)
 			band = 0;
 
