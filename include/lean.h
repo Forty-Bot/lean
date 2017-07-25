@@ -87,7 +87,6 @@ struct lean_sb_info {
 	struct percpu_counter free_counter;
 	struct inode *bitmap;
 	struct lean_bitmap *bitmap_cache;
-	struct page **bitmap_pages;
 	struct buffer_head *sbh;
 	struct buffer_head *sbh_backup;
 #endif
