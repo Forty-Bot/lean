@@ -35,7 +35,7 @@ static void lean_put_page(struct page *page)
 
 /* TODO: Remount as read-only on corrupt directory entry */
 static int lean_readdir(struct inode *inode, struct dir_context *ctx,
-			bool skip_empty)
+			bool skip_empty, bool lock)
 {
 	int ret = 0;
 	struct super_block *s = inode->i_sb;
@@ -61,7 +61,9 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 			ctx->pos += PAGE_SIZE - off;
 			return PTR_ERR(page);
 		}
-
+		
+		if (lock)
+			lock_page(page);
 		kaddr = page_address(page);
 		de = (struct lean_dir_entry *)(kaddr + off);
 		while (off <= lean_last_byte(inode, n)
@@ -121,6 +123,8 @@ next:
 			ctx->pos = off + n * PAGE_SIZE;
 			de = (struct lean_dir_entry *)(kaddr + off);
 		}
+		if (lock)
+			unlock_page(page);
 		lean_put_page(page);
 	}
 	return ret;
@@ -128,7 +132,7 @@ next:
 
 static int lean_iterate(struct file *file, struct dir_context *ctx)
 {
-	return lean_readdir(file_inode(file), ctx, true);
+	return lean_readdir(file_inode(file), ctx, true, false);
 }
 
 const struct file_operations lean_dir_ops = {
@@ -175,7 +179,7 @@ static struct dentry *lean_lookup(struct inode *dir, struct dentry *de,
 	if (de->d_name.len > LEAN_DIR_NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
 
-	err = lean_readdir(dir, &match.ctx, true);
+	err = lean_readdir(dir, &match.ctx, true, false);
 	if (err)
 		return ERR_PTR(err);
 	ino = match.ino;
