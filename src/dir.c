@@ -34,10 +34,10 @@ static void lean_put_page(struct page *page)
 }
 
 /* TODO: Remount as read-only on corrupt directory entry */
-static int lean_readdir(struct inode *inode, struct dir_context *ctx)
+static int lean_readdir(struct inode *inode, struct dir_context *ctx,
+			bool skip_empty)
 {
 	int ret = 0;
-	struct page *next = NULL;
 	struct super_block *s = inode->i_sb;
 	/* This PAGE_SIZE will be subtracted off in the first loop iteration */
 	unsigned int off = ctx->pos + PAGE_SIZE;
@@ -48,19 +48,18 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 		off += sizeof(struct lean_inode);
 
 	for (; n < npages; n++) {
-		unsigned char *kaddr, *local_ptr;
+		unsigned char *kaddr;
 		struct lean_dir_entry *de;
-		struct page *page = (next) ? next : lean_get_page(inode, n);
+		struct page *page = lean_get_page(inode, n);
 		uint16_t length;
 
-		next = NULL;
 		off -= PAGE_SIZE;
 
 		if (IS_ERR(page)) {
 			lean_msg(s, KERN_ERR, "bad page in inode %lu",
 				 inode->i_ino);
 			ctx->pos += PAGE_SIZE - off;
-			return PTR_ERR(next);
+			return PTR_ERR(page);
 		}
 
 		kaddr = page_address(page);
@@ -76,22 +75,19 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 				return -EIO;
 			}
 			/* Deleted entry */
-			if (de->type == LFT_NONE) {
-				off += de->entry_length
-					* sizeof(struct lean_dir_entry);
-				ctx->pos = off + n * PAGE_SIZE;
-				continue;
-			}
+			if (de->type == LFT_NONE && skip_empty)
+				goto next;
 
 			length = le16_to_cpu(de->name_length);
-			if (unlikely(!length)) {
+			if (skip_empty && unlikely(!length)) {
 				lean_msg(s, KERN_ERR,
 					 "zero-length directory name in inode %lu",
 					 inode->i_ino);
 				lean_put_page(page);
 				return -EIO;
-			} else if (unlikely(length > de->entry_length
-				* sizeof(struct lean_dir_entry) - 12)) {
+			} else if (skip_empty
+				   && unlikely(length > de->entry_length
+				   * sizeof(struct lean_dir_entry) - 12)) {
 				lean_msg(s, KERN_ERR,
 					 "directory name longer than directory entry in inode %lu",
 					 inode->i_ino);
@@ -100,9 +96,9 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 			}
 
 			if (unlikely(inode->i_size + sizeof(struct lean_inode)
-				< off + de->entry_length
-				* sizeof(struct lean_dir_entry)
-				+ n * PAGE_SIZE)) {
+				     < off
+				     + de->entry_length * sizeof(struct lean_dir_entry)
+				     + n * PAGE_SIZE)) {
 				lean_msg(s, KERN_ERR,
 					 "directory entry extends past directory size in inode %lu",
 					 inode->i_ino);
@@ -110,40 +106,17 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 				return -EIO;
 			}
 
-			if (off	+ de->entry_length
-				* sizeof(struct lean_dir_entry) < PAGE_SIZE) {
-				/* Everything fits in one page */
-				local_ptr = de->name;
-			} else {
-				/* We need to load the next page as well */
-				size_t remaining = kaddr + PAGE_SIZE - de->name;
-
-				local_ptr = kmalloc(length, GFP_NOFS);
-				if (!local_ptr) {
-					lean_put_page(page);
-					return -ENOMEM;
-				}
-
-				next = lean_get_page(inode, n + 1);
-				if (IS_ERR(next)) {
-					lean_msg(s, KERN_ERR,
-						 "bad page in inode %lu",
-						 inode->i_ino);
-					lean_put_page(page);
-					return PTR_ERR(next);
-				}
-				strncpy(local_ptr, de->name, remaining);
-				strncpy(local_ptr + remaining,
-					page_address(next), length - remaining);
-			}
+			if (off	+ length >= PAGE_SIZE)
+				/* Truncate the name to the page boundary */
+				length = PAGE_SIZE - off;
 			if (!dir_emit(ctx, de->name, length,
 				      le64_to_cpu(de->inode),
 				LEAN_DT(de->type))) {
-				if (next)
-					lean_put_page(next);
 				lean_put_page(page);
 				return 0;
 			}
+
+next:
 			off += de->entry_length * sizeof(struct lean_dir_entry);
 			ctx->pos = off + n * PAGE_SIZE;
 			de = (struct lean_dir_entry *)(kaddr + off);
@@ -155,7 +128,7 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx)
 
 static int lean_iterate(struct file *file, struct dir_context *ctx)
 {
-	return lean_readdir(file_inode(file), ctx);
+	return lean_readdir(file_inode(file), ctx, true);
 }
 
 const struct file_operations lean_dir_ops = {
@@ -202,7 +175,7 @@ static struct dentry *lean_lookup(struct inode *dir, struct dentry *de,
 	if (de->d_name.len > LEAN_DIR_NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
 
-	err = lean_readdir(dir, &match.ctx);
+	err = lean_readdir(dir, &match.ctx, true);
 	if (err)
 		return ERR_PTR(err);
 	ino = match.ino;
