@@ -284,16 +284,15 @@ int parse_long(const char *str, long *n)
 	return ret;
 }
 
-const char help_msg[] =
-"Usage: mkfs.lean [OPTION]... DEVICE\n"
-"Format a disk as a LEAN filesystem\n"
-"OPTIONS:\n"
-"\t-b sectors-per-band\n"
-"\t-f superblock-offset\n"
-"\t-n volume-label\n"
-"\t-p preallocated-sectors\n"
-"\t-U UUID\n"
-"\t-h\n";
+#define HELP_MSG "Usage: %s [OPTION]... DEVICE\n" \
+"Format a disk as a LEAN filesystem\n" \
+"OPTIONS:\n" \
+"\t-b sectors-per-band\n" \
+"\t-f superblock-offset\n" \
+"\t-n volume-label\n" \
+"\t-p preallocated-sectors\n" \
+"\t-U UUID\n" \
+"\t-h print this help message\n"
 
 int main(int argc, char **argv)
 {
@@ -335,7 +334,7 @@ int main(int argc, char **argv)
 			}
 			break;
 		case 'h':
-			printf(help_msg);
+			printf(HELP_MSG, argv[0]);
 			return 0;
 		case 'n':
 			strncpy(volume_name, optarg, 63);
@@ -359,13 +358,14 @@ int main(int argc, char **argv)
 		case '?':
 			return -1;
 		default:
-			error(-1, 0, "Invalid option -%c\n%s", c, help_msg);
+			error(-1, 0, "Invalid option -%c\n" HELP_MSG,
+			      c, argv[0]);
 		}
 	}
 
 	/* Don't use error() here for output consistency */
 	if (optind >= argc || !argv[optind]) {
-		fprintf(stderr, help_msg);
+		fprintf(stderr, HELP_MSG, argv[0]);
 		return -1;
 	}
 
