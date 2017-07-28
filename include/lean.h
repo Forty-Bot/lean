@@ -31,6 +31,7 @@ static const uint8_t LEAN_MAGIC_INDIRECT[] = { 'I', 'N', 'D', 'X' };
 static const uint8_t LEAN_MAGIC_INODE[] = { 'N', 'O', 'D', 'E' };
 
 #define LEAN_SEC 512
+#define LEAN_SEC_SHIFT 9
 
 /*
  * Structure containing fundamental information about a LEAN volume.
@@ -154,6 +155,7 @@ struct lean_inode {
 struct lean_ino_info {
 	uint8_t extent_count; /* Number of extents in this inode */
 	uint32_t indirect_count; /* Number of owned indirects */
+#ifndef __KERNEL__
 	uint32_t link_count; /* Number of references to this file */
 	uid_t uid; /* User id of the owner */
 	gid_t gid; /* Group id of the owner */
@@ -164,6 +166,7 @@ struct lean_ino_info {
 	int64_t time_status; /* Unix time of last status change */
 	int64_t time_modify; /* Unix time of last modification */
 	int64_t time_create; /* Unix time of creation */
+#endif
 	uint64_t indirect_first;
 	uint64_t indirect_last;
 	uint64_t fork; /* Inode of fork, if existing */

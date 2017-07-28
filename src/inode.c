@@ -68,7 +68,7 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 		
 		/* 
 		 * Try again in case someone else has already allocated new
-		 * sectors while we were waiting for thw write lock
+		 * sectors while we were waiting for the write lock
 		 */
 		sector = lean_find_sector(li, sec, &count);
 		if (sector)
@@ -135,6 +135,7 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 	struct lean_inode *raw;
 	struct lean_ino_info *li;
 	struct inode *inode;
+	uint32_t attr;
 
 	inode = iget_locked(s, ino);
 	if (!inode)
@@ -174,33 +175,34 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 		goto bad_inode;
 	}
 
-	inode->i_mode = li->attr & LIA_POSIX_MASK;
-	if (LIA_ISFMT_REG(li->attr))
+	attr = le32_to_cpu(raw->attr);
+	inode->i_mode = attr & LIA_POSIX_MASK;
+	if (LIA_ISFMT_REG(attr))
 		inode->i_mode |= S_IFREG;
-	if (LIA_ISFMT_DIR(li->attr))
+	if (LIA_ISFMT_DIR(attr))
 		inode->i_mode |= S_IFDIR;
-	if (LIA_ISFMT_SYM(li->attr))
+	if (LIA_ISFMT_SYM(attr))
 		inode->i_mode |= S_IFLNK;
 	inode->i_flags &= ~(S_SYNC | S_NOATIME | S_IMMUTABLE);
 	/* No suid or xattr security attributes */
 	inode->i_flags |= S_NOSEC;
 	if (ino == sbi->bad)
 		inode->i_flags |= S_PRIVATE;
-	if (li->attr & LIA_SYNC)
+	if (attr & LIA_SYNC)
 		inode->i_flags |= S_SYNC;
-	if (li->attr & LIA_NOATIME)
+	if (attr & LIA_NOATIME)
 		inode->i_flags |= S_NOATIME;
-	if (li->attr & LIA_IMMUTABLE)
+	if (attr & LIA_IMMUTABLE)
 		inode->i_flags |= S_IMMUTABLE;
 
-	i_uid_write(inode, li->uid);
-	i_gid_write(inode, li->gid);
-	set_nlink(inode, li->link_count);
-	inode->i_atime = lean_timespec(li->time_access);
-	inode->i_ctime = lean_timespec(li->time_status);
-	inode->i_mtime = lean_timespec(li->time_modify);
-	inode->i_size = li->size;
-	inode_set_bytes(inode, li->sector_count * LEAN_SEC);
+	i_uid_write(inode, le32_to_cpu(raw->uid));
+	i_gid_write(inode, le32_to_cpu(raw->gid));
+	set_nlink(inode, le32_to_cpu(raw->link_count));
+	inode->i_atime = lean_timespec(le64_to_cpu(raw->time_access));
+	inode->i_ctime = lean_timespec(le64_to_cpu(raw->time_status));
+	inode->i_mtime = lean_timespec(le64_to_cpu(raw->time_modify));
+	inode->i_size = le64_to_cpu(raw->size);
+	inode_set_bytes(inode, le64_to_cpu(raw->sector_count) * LEAN_SEC);
 
 	inode->i_mapping->a_ops = &lean_aops;
 	if (S_ISREG(inode->i_mode)) {
@@ -232,6 +234,7 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 	struct lean_sb_info *sbi = s->s_fs_info;
 	struct lean_inode *raw;
 	struct lean_ino_info *li = LEAN_I(inode);
+	uint32_t attr;
 
 	if (ino < sbi->root || ino > sbi->sectors_total)
 		return -EINVAL;
@@ -239,35 +242,37 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 	bh = sb_bread(s, ino);
 	if (!bh)
 		return -EIO;
+	raw = (struct lean_inode *)bh->b_data;
 
-	li->attr = (li->attr & ~LIA_POSIX_MASK)
+	attr = (raw->attr & ~LIA_POSIX_MASK)
 		| (inode->i_mode & LIA_POSIX_MASK);
 	if (S_ISREG(inode->i_mode))
-		li->attr |= LIA_FMT_REG;
+		attr |= LIA_FMT_REG;
 	if (S_ISDIR(inode->i_mode))
-		li->attr |= LIA_FMT_DIR;
+		attr |= LIA_FMT_DIR;
 	if (S_ISLNK(inode->i_mode))
-		li->attr |= LIA_FMT_SYM;
-	li->attr &= ~(LIA_SYNC | LIA_NOATIME | LIA_IMMUTABLE);
+		attr |= LIA_FMT_SYM;
+	attr &= ~(LIA_SYNC | LIA_NOATIME | LIA_IMMUTABLE);
 	if (IS_SYNC(inode))
-		li->attr |= LIA_SYNC;
+		attr |= LIA_SYNC;
 	if (IS_NOATIME(inode))
-		li->attr |= LIA_NOATIME;
+		attr |= LIA_NOATIME;
 	if (IS_IMMUTABLE(inode))
-		li->attr |= LIA_IMMUTABLE;
+		attr |= LIA_IMMUTABLE;
+	raw->attr = cpu_to_le32(attr);
 
-	li->uid	= i_uid_read(inode);
-	li->gid	= i_gid_read(inode);
-	li->link_count = inode->i_nlink;
-	li->time_access = lean_time(inode->i_atime);
-	li->time_status = lean_time(inode->i_ctime);
-	li->time_modify = lean_time(inode->i_mtime);
-	li->size = inode->i_size;
+	raw->uid = cpu_to_le32(i_uid_read(inode));
+	raw->gid = cpu_to_le32(i_gid_read(inode));
+	raw->link_count = cpu_to_le32(inode->i_nlink);
+	raw->time_access = cpu_to_le64(lean_time(inode->i_atime));
+	raw->time_status = cpu_to_le64(lean_time(inode->i_ctime));
+	raw->time_modify = cpu_to_le64(lean_time(inode->i_mtime));
+	raw->size = cpu_to_le64(i_size_read(inode));
 
 	down_read(&li->alloc_lock);
-	li->sector_count = inode->i_blocks;
+	raw->sector_count = cpu_to_le64(inode_get_bytes(inode) >>
+					LEAN_SEC_SHIFT);
 
-	raw = (struct lean_inode *)bh->b_data;
 	lean_info_to_inode(li, raw);
 	up_read(&li->alloc_lock);
 
@@ -364,7 +369,6 @@ int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count)
 		li->extent_sizes[li->extent_count] = *count;
 		li->extent_count++;
 	}
-	li->sector_count += *count;
 
 	inode_add_bytes(inode, *count * LEAN_SEC);
 	mark_inode_dirty(inode);

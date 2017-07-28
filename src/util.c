@@ -123,6 +123,7 @@ int lean_inode_to_info(const struct lean_inode *li, struct lean_ino_info *ii)
 	if (ii->extent_count > LEAN_INODE_EXTENTS)
 		ii->extent_count = LEAN_INODE_EXTENTS;
 	ii->indirect_count = tocpu32(li->indirect_count);
+#ifndef __KERNEL__
 	ii->link_count = tocpu32(li->link_count);
 	ii->uid = tocpu32(li->uid);
 	ii->gid = tocpu32(li->gid);
@@ -133,6 +134,7 @@ int lean_inode_to_info(const struct lean_inode *li, struct lean_ino_info *ii)
 	ii->time_status = tocpu64(li->time_status);
 	ii->time_modify = tocpu64(li->time_modify);
 	ii->time_create = tocpu64(li->time_create);
+#endif
 	ii->indirect_first = tocpu64(li->indirect_first);
 	ii->indirect_last = tocpu64(li->indirect_last);
 	ii->fork = tocpu64(li->fork);
@@ -156,6 +158,7 @@ void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li)
 	if (li->extent_count > LEAN_INODE_EXTENTS)
 		li->extent_count = LEAN_INODE_EXTENTS;
 	li->indirect_count = tocpu32(ii->indirect_count);
+#ifndef __KERNEL__
 	li->link_count = tocpu32(ii->link_count);
 	li->uid = tocpu32(ii->uid);
 	li->gid = tocpu32(ii->gid);
@@ -166,6 +169,7 @@ void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li)
 	li->time_status = tole64(ii->time_status);
 	li->time_modify = tole64(ii->time_modify);
 	li->time_create = tole64(ii->time_create);
+#endif
 	li->indirect_first = tole64(ii->indirect_first);
 	li->indirect_last = tole64(ii->indirect_last);
 	li->fork = tole64(ii->fork);
