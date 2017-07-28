@@ -2,6 +2,7 @@
 #include "lean.h"
 
 #include <linux/buffer_head.h>
+#include <linux/blkdev.h>
 #include <linux/mpage.h>
 #include <linux/mutex.h>
 #include <linux/pagemap.h>
@@ -367,12 +368,12 @@ static uint32_t lean_try_alloc(struct super_block *s,
 	int goal_page_nr = goal >> PAGE_SHIFT;
 	struct page *goal_page = bitmap->pages[goal_page_nr];
 	char *addr = kmap(goal_page);
-	struct lean_try_alloc_data priv;
-
-	priv.bitmap = bitmap;
-	priv.count = *count;
-	priv.off = goal & 7;
-	priv.sync = s->s_flags & MS_SYNCHRONOUS;
+	struct lean_try_alloc_data priv = {
+		.bitmap = bitmap,
+		.count = *count,
+		.off = goal & 7,
+		.sync = s->s_flags & MS_SYNCHRONOUS
+	};
 
 	/* Try searching starting from the goal */
 	found = lean_try_alloc_iter((goal >> 3) + addr + bitmap->off,
@@ -493,6 +494,26 @@ uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
 err:
 	lean_bitmap_put(bitmap);
 	return 0;
+}
+
+uint64_t lean_new_zeroed_sectors(struct super_block *s, uint64_t goal,
+				 uint32_t *count, int *errp)
+{
+	uint64_t sector = lean_new_sectors(s, goal, count, errp);
+	
+	if (*errp) {
+		lean_msg(s, KERN_INFO, "failed to allocate sectors");
+		return 0;
+	}
+
+	/* Take a page from ext4's book here */
+	clean_bdev_aliases(s->s_bdev, sector, *count);
+	*errp = blkdev_issue_zeroout(s->s_bdev, sector, *count, GFP_NOFS, 0);
+	if (*errp) {
+		lean_msg(s, KERN_INFO, "failed to zero sectors");
+		lean_free_sectors(s, sector, *count);
+	}
+	return sector;
 }
 
 struct lean_free_sectors_data {

@@ -1,7 +1,6 @@
 #include "driver.h"
 #include "lean.h"
 
-#include <linux/blkdev.h>
 #include <linux/buffer_head.h>
 #include <linux/err.h>
 #include <linux/fs.h>
@@ -328,28 +327,19 @@ int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count)
 	int ret;
 	struct lean_ino_info *li = LEAN_I(inode);
 	struct super_block *s = inode->i_sb;
-	uint64_t goal = lean_find_next_sector(inode);
 
 	WARN_ON_ONCE(*count > INT_MAX);
 
-	if (*sector != goal && li->extent_count >= 6) {
+	*sector = lean_find_next_sector(inode);
+	if (li->extent_count >= 6 &&
+	    *sector != li->extent_starts[li->extent_count - 1]
+	               + li->extent_sizes[li->extent_count - 1]) {
 	/* No room for another extent */
-		ret = -ENXIO;
-		goto failed;
+		return -ENXIO;
 	}
-	*sector = lean_new_sectors(s, goal, count, &ret);
-	if (ret) {
-		lean_msg(s, KERN_INFO, "failed to allocate sectors");
+	*sector = lean_new_zeroed_sectors(s, *sector, count, &ret);
+	if (ret)
 		return ret;
-	}
-
-	/* Take a page from ext4's book here */
-	clean_bdev_aliases(s->s_bdev, *sector, *count);
-	ret = blkdev_issue_zeroout(s->s_bdev, *sector, *count, GFP_NOFS, 0);
-	if (ret) {
-		lean_msg(s, KERN_INFO, "failed to zero sectors");
-		goto failed;
-	}
 
 	/*
 	 * Don't worry about barriers, as no one should read from li until after
@@ -362,8 +352,8 @@ int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count)
 		/* We need to add another extent */
 		if (li->extent_count >= 6) {
 			lean_msg(s, KERN_INFO, "cannot create extent");
-			ret = -ENXIO;
-			goto failed;
+			lean_free_sectors(s, *sector, *count);
+			return -ENXIO;
 		}
 		li->extent_starts[li->extent_count] = *sector;
 		li->extent_sizes[li->extent_count] = *count;
@@ -372,9 +362,5 @@ int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count)
 
 	inode_add_bytes(inode, *count * LEAN_SEC);
 	mark_inode_dirty(inode);
-	return ret;
-
-failed:
-	lean_free_sectors(s, *sector, *count);
 	return ret;
 }

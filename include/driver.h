@@ -82,7 +82,7 @@ extern const struct inode_operations lean_file_inode_ops;
 extern const struct file_operations lean_dir_ops;
 extern const struct inode_operations lean_dir_inode_ops;
 
-/* balloc.c */
+/* alloc.c */
 void __lean_bitmap_put(struct lean_bitmap *bitmap, int count);
 static inline void lean_bitmap_put(struct lean_bitmap *bitmap)
 {
@@ -97,5 +97,7 @@ uint64_t lean_count_free_sectors(struct super_block *s);
 uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
 			  int *errp);
 void lean_free_sectors(struct super_block *s, uint64_t start, uint32_t count);
+uint64_t lean_new_zeroed_sectors(struct super_block *s, uint64_t goal,
+				 uint32_t *count, int *errp);
 
 #endif /* DRIVER_H */
