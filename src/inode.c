@@ -355,6 +355,7 @@ int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count)
 	}
 
 	inode_add_bytes(inode, *count * LEAN_SEC);
+	inode->i_ctime = current_time(inode);
 	mark_inode_dirty(inode);
 	return ret;
 }

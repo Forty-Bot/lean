@@ -295,42 +295,52 @@ struct lean_try_alloc_data {
 
 /*
  * This iterator tries to find the first free byte of sectors and then any free
- * sector. It then allocates the sector, if possible, or returns to a bitwise
- * search. After allocating a sector, it attempts to allocate up to data->num
- * sectors. It returns the number of sectors allocated, and stores the first
- * sector (relative to the start of the band) in data->sector
+ * sector. It then allocates the sector, if possible, or returns to searching.
+ * After allocating a sector, it attempts to allocate up to data->num sectors.
+ * It returns the number of sectors allocated, and stores the first sector
+ * (relative to he start of the band) in data->sector
+ *
+ * The longest path through this function is:
+ * 1. data->off is not zero, so start with a bitwise search
+ * 2. bitwise search finds a sector
+ * 3. sector was taken, so start bytewise search where we left off
+ * 4. bytewise search finds a sector
+ * 5. sector was taken, so restart bytewise search where we left off
+ * 6. repeat until we reach the end of the band
+ * 7. restart bitwise search at data->off
+ * 8. bitwise search finds a sector
+ * 9. sector was taken, so restart bitwise search where we left off
+ * 10. repeat until we reach the end of the band or finally allocate something
+ *
  * Takes data->bitmap->lock
  */
 static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 			       void *priv)
 {
+	bool bytewise_done = false;
+	char *ptr;
 	int i;
 	struct lean_try_alloc_data *data = priv;
 	struct page *page = data->bitmap->pages[page_nr];
 	int tmp = data->off;
-	char *ptr;
 
 	pr_info("addr = %p size = %u, off = %u", addr, size, tmp);
 
 	/* If we have an offset, go straight to the bitwise search */
 	if (tmp)
-		goto retry;
+		goto bitwise;
 
-	ptr = (char *)memscan(addr, 0, size);
+bytewise:
+	ptr = (char *)memscan(addr + (tmp >> 3), 0, size);
 	pr_info("Searching for a free byte... got %p", ptr);
 	if (ptr < addr + size) {
 		tmp = (ptr - addr) * 8;
 		goto found;
 	}
+	tmp = data->off;
+	bytewise_done = true;
 
-	/*
-	 * Skip the byte search on retry, since we either found a full byte
-	 * previously (and thus should retry with a bitwise search), or we found
-	 * the sector using a bitwise search in the first place
-	 * TODO: should we continue with a byte-wise search anyway? It could
-	 * help keep down fragmentation.
-	 */
-retry:
+bitwise:
 	tmp = find_next_zero_bit((unsigned long *)addr, size, tmp);
 	pr_info("Searching for a free bit... got %d", tmp);
 	if (tmp < size * 8)
@@ -339,9 +349,13 @@ retry:
 	return 0;
 
 found:
-	if (lean_set_bit_atomic(&data->bitmap->lock, tmp, addr))
+	if (lean_set_bit_atomic(&data->bitmap->lock, tmp, addr)) {
 		/* We did not get the sector */
-		goto retry;
+		if (!bytewise_done)
+			goto bytewise;
+		else
+			goto bitwise;
+	}
 
 	data->sector = tmp + page_nr * PAGE_SHIFT;
 	for (i = 1; i < data->count; i++)
