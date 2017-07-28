@@ -233,12 +233,15 @@ int lean_bitmap_cache_init(struct super_block *s)
 	sbi->bitmap = new_inode(s);
 	if (!sbi->bitmap)
 		goto error;
+	/* Use the superblock as this inode's ino; we need one as a hash value */
+	sbi->bitmap->i_ino = sbi->super_primary;
 	sbi->bitmap->i_flags = S_PRIVATE;
 	set_nlink(sbi->bitmap, 1);
 	sbi->bitmap->i_size = sbi->sectors_total >> 3;
 	sbi->bitmap->i_blocks = sbi->sectors_total >> 12;
 	sbi->bitmap->i_mapping->a_ops = &lean_bitmap_aops;
 	mapping_set_gfp_mask(sbi->bitmap->i_mapping, GFP_NOFS);
+	insert_inode_hash(sbi->bitmap);
 
 	return 0;
 
