@@ -331,12 +331,6 @@ int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count)
 	WARN_ON_ONCE(*count > INT_MAX);
 
 	*sector = lean_find_next_sector(inode);
-	if (li->extent_count >= 6 &&
-	    *sector != li->extent_starts[li->extent_count - 1]
-	               + li->extent_sizes[li->extent_count - 1]) {
-	/* No room for another extent */
-		return -ENXIO;
-	}
 	*sector = lean_new_zeroed_sectors(s, *sector, count, &ret);
 	if (ret)
 		return ret;
