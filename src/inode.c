@@ -361,6 +361,15 @@ int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count)
 	return ret;
 }
 
+/*
+ * The following two functions are based off Orlov's allocator, as described in
+ * fs/ext2/ialloc.c. Directories are placed in bands with better-than-average
+ * free sectors, starting at the band of their parent, or failing that, in the
+ * first band with a free sector. Top-level directories start in a random band
+ * instead. Ordinary files are placed in the same band as their directory, if
+ * possible, a band with free sectors selected by quadratic probing (based on an
+ * initial guess based on their directory's inode), or in the first free sector.
+ */
 static uint64_t lean_find_goal_dir(struct inode *parent)
 {
 	struct lean_bitmap *bitmap;
@@ -507,7 +516,7 @@ struct inode *lean_new_inode(struct inode *dir, umode_t mode,
 	return inode;
 
 fail:
-		make_bad_inode(inode);
-		iput(inode);
-		return ERR_PTR(err);
+	make_bad_inode(inode);
+	iput(inode);
+	return ERR_PTR(err);
 }
