@@ -165,8 +165,8 @@ struct lean_ino_info {
 	int64_t time_access; /* Unix time of last access */
 	int64_t time_status; /* Unix time of last status change */
 	int64_t time_modify; /* Unix time of last modification */
-	int64_t time_create; /* Unix time of creation */
 #endif
+	int64_t time_create; /* Unix time of creation */
 	uint64_t indirect_first;
 	uint64_t indirect_last;
 	uint64_t fork; /* Inode of fork, if existing */

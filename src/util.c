@@ -133,8 +133,8 @@ int lean_inode_to_info(const struct lean_inode *li, struct lean_ino_info *ii)
 	ii->time_access = tocpu64(li->time_access);
 	ii->time_status = tocpu64(li->time_status);
 	ii->time_modify = tocpu64(li->time_modify);
-	ii->time_create = tocpu64(li->time_create);
 #endif
+	ii->time_create = tocpu64(li->time_create);
 	ii->indirect_first = tocpu64(li->indirect_first);
 	ii->indirect_last = tocpu64(li->indirect_last);
 	ii->fork = tocpu64(li->fork);
@@ -168,8 +168,8 @@ void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li)
 	li->time_access = tole64(ii->time_access);
 	li->time_status = tole64(ii->time_status);
 	li->time_modify = tole64(ii->time_modify);
-	li->time_create = tole64(ii->time_create);
 #endif
+	li->time_create = tole64(ii->time_create);
 	li->indirect_first = tole64(ii->indirect_first);
 	li->indirect_last = tole64(ii->indirect_last);
 	li->fork = tole64(ii->fork);
