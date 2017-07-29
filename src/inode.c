@@ -6,6 +6,7 @@
 #include <linux/fs.h>
 #include <linux/mpage.h>
 #include <linux/quotaops.h>
+#include <linux/random.h>
 #include <linux/writeback.h>
 
 /*
@@ -358,4 +359,155 @@ int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count)
 	inode->i_ctime = current_time(inode);
 	mark_inode_dirty(inode);
 	return ret;
+}
+
+static uint64_t lean_find_goal_dir(struct inode *parent)
+{
+	struct lean_bitmap *bitmap;
+	struct super_block *s = parent->i_sb;
+	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
+	uint32_t free, i;
+	uint32_t mean_free = lean_count_free_sectors(s) / sbi->band_count;  
+	uint64_t goal, band;
+
+	if (parent == d_inode(s->s_root))
+		goal = (prandom_u32() << 31) + prandom_u32();
+	else
+		goal = parent->i_ino;
+	band = goal % sbi->band_count;
+
+	/* Try to find a band with above-average free sectors */
+	for (i = 0; i < sbi->band_count; i++) {
+		if (++band > sbi->band_count)
+			band -= sbi->band_count;
+		
+		bitmap = lean_bitmap_get(s, band);
+		if (IS_ERR(bitmap))
+			continue;
+
+		free = lean_bitmap_getfree(bitmap);
+		lean_bitmap_put(bitmap);
+		if (free > mean_free)
+			return band << sbi->log2_band_sectors;
+	}
+
+	/* Couldn't find any better-than-average sectors, just return the goal */
+	return goal;
+}
+
+static uint64_t lean_find_goal_other(struct inode *parent)
+{
+	struct super_block *s = parent->i_sb;
+	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
+	struct lean_bitmap *bitmap;
+	uint32_t free;
+	uint64_t i, isquared;
+	uint64_t band = parent->i_ino >> sbi->log2_band_sectors;
+
+	/* Default to the parent sector on error or space left in the band */
+	bitmap = lean_bitmap_get(s, band);
+	if (IS_ERR(bitmap))
+		return parent->i_ino;
+	
+	free = lean_bitmap_getfree(bitmap);
+	lean_bitmap_put(bitmap);
+	if (free) {
+		lean_bitmap_put(bitmap);
+		return parent->i_ino;
+	}
+	lean_bitmap_put(bitmap);
+
+	/*
+	 * Try a quadratic search starting at a sector determined by the parent
+	 * sector
+	 */
+	band = parent->i_ino % sbi->band_count;
+	for (i = 1, isquared = 1;
+	     isquared < sbi->band_count;
+	     i += 2, isquared += i) {
+		band += i;
+		if (band > sbi->band_count)
+			band -= sbi->band_count;
+
+		bitmap = lean_bitmap_get(s, band);
+		if (IS_ERR(bitmap))
+			continue;
+
+		free = lean_bitmap_getfree(bitmap);
+		lean_bitmap_put(bitmap);
+		if (free)
+			return band << sbi->log2_band_sectors;
+	}
+
+	/*
+	 * We didn't check everything the the quadratic search, so try a linear
+	 * search when we allocate the block
+	 */
+	return parent->i_ino;
+}
+
+struct inode *lean_new_inode(struct inode *dir, umode_t mode,
+			     const struct qstr *qstr)
+{
+	int err;
+	struct super_block *s = dir->i_sb;
+	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
+	struct inode *inode;
+	struct lean_ino_info *li;
+	struct timespec ts;
+	uint32_t count = sbi->prealloc;
+	uint64_t sec, goal;
+
+	inode = new_inode(s);
+	if (!inode)
+		return ERR_PTR(-ENOMEM);
+	li = LEAN_I(inode);
+
+	if (S_ISDIR(mode))
+		goal = lean_find_goal_dir(dir);
+	else
+		goal = lean_find_goal_other(dir);
+
+	sec = lean_new_zeroed_sectors(s, goal, &count, &err);
+	if (err)
+		goto fail;
+	
+	inode_init_owner(inode, dir, mode);
+	inode->i_ino = sec;
+	inode->i_size = 0;
+	inode_set_bytes(inode, count * LEAN_SEC);
+	ts = current_time(inode);
+	inode->i_mtime = inode->i_atime = inode->i_ctime = ts;
+	li->time_create = lean_time(ts);
+	li->extent_count = 1;
+	li->indirect_count = 0;
+	li->indirect_first = 0;
+	li->indirect_last = 0;
+	li->fork = 0;
+	li->extent_starts[0] = sec;
+	li->extent_sizes[0] = count;
+	init_rwsem(&li->alloc_lock);
+
+	inode->i_mapping->a_ops = &lean_aops;
+	if (S_ISREG(inode->i_mode)) {
+		inode->i_op = &lean_file_inode_ops;
+		inode->i_fop = &lean_file_ops;
+	} else {
+		inode->i_op = &lean_dir_inode_ops;
+		inode->i_fop = &lean_dir_ops;
+	}
+
+	if (insert_inode_locked(inode) < 0) {
+		lean_msg(s, KERN_ERR, "inode number %llu already in use", sec);
+		err = -EIO;
+		goto fail;
+	}
+
+	mark_inode_dirty(inode);
+	return inode;
+
+fail:
+		make_bad_inode(inode);
+		iput(inode);
+		return ERR_PTR(err);
 }
