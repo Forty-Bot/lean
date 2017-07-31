@@ -410,7 +410,7 @@ static uint64_t lean_find_goal_other(struct inode *parent)
 	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
 	struct lean_bitmap *bitmap;
 	uint32_t free;
-	uint64_t i, isquared;
+	uint64_t i;
 	uint64_t band = parent->i_ino >> sbi->log2_band_sectors;
 
 	/* Default to the parent sector on error or space left in the band */
@@ -430,12 +430,10 @@ static uint64_t lean_find_goal_other(struct inode *parent)
 	 * Try a quadratic search starting at a sector determined by the parent
 	 * sector
 	 */
-	band = parent->i_ino % sbi->band_count;
-	for (i = 1, isquared = 1;
-	     isquared < sbi->band_count;
-	     i += 2, isquared += i) {
+	band = (band + parent->i_ino) % sbi->band_count;
+	for (i = 1; i < sbi->band_count; i += 2) {
 		band += i;
-		if (band > sbi->band_count)
+		if (band >= sbi->band_count)
 			band -= sbi->band_count;
 
 		bitmap = lean_bitmap_get(s, band);
