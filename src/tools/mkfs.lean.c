@@ -98,7 +98,7 @@ void fill_bitmap(uint8_t *bm, uint64_t n)
 /*
  * Set a sector as in use
  */
-void set_sec(uint8_t *bm, uint64_t sec)
+void toggle_sec(uint8_t *bm, uint64_t sec)
 {
 	bm[sec >> 3] ^= 1 << (sec & 7);
 }
@@ -142,7 +142,7 @@ uint64_t generate_bm(int fd, struct lean_sb_info *sb)
 			   (zero_sec + 1 + (bands - 1) * band_bm_sec);
 	sb->super_backup = ((sb->sectors_total < band_sec) ?
 			     sb->sectors_total : band_sec) - 1;
-	set_sec(bm, sb->super_backup);
+	toggle_sec(bm, sb->super_backup);
 	if (write_at_sector(fd, sb->bitmap_start, bm, bm_size))
 		error(-1, errno, "Unable to write band zero bitmap");
 
