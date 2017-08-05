@@ -31,6 +31,7 @@ static const uint8_t LEAN_MAGIC_INDIRECT[] = { 'I', 'N', 'D', 'X' };
 static const uint8_t LEAN_MAGIC_INODE[] = { 'N', 'O', 'D', 'E' };
 
 #define LEAN_SEC 512
+#define LEAN_SEC_MASK (LEAN_SEC - 1)
 #define LEAN_SEC_SHIFT 9
 
 /*
@@ -184,6 +185,19 @@ struct lean_ino_info {
 };
 
 /*
+ * File type used in dir_entry
+ * Analogous to IA_FMT
+ */
+enum lean_file_type {
+	LFT_NONE = 0, /* An empty entry */
+	LFT_REG = 1,
+	LFT_DIR = 2,
+	LFT_SYM = 3
+};
+
+#define LIA_FMT_SHIFT 29
+
+/*
  * Enum containing all attributes of an inode
  * The bits are allocated as such:
  * 0xTTTXXXXXXXXXFFFFFFFFPPPPPPPPPPPP
@@ -218,11 +232,12 @@ enum lean_inode_attr {
 				   after file is closed */
 	LIA_INLINE = 1 << 19, /* Inline extended attributes in first sector */
 	/* Filetype attributes */
-	LIA_FMT_MASK = (int)(7u << 29), /* Mask of file type */
-	LIA_FMT_REG = 1 << 29, /* Regular file */
-	LIA_FMT_DIR = 2 << 29, /* Directory */
-	LIA_FMT_SYM = 3 << 29, /* Symbolic link */
-	LIA_FMT_FORK = (int)(4u << 29) /* Fork */
+	LIA_FMT_REG = LFT_REG << LIA_FMT_SHIFT, /* Regular file */
+	LIA_FMT_DIR = LFT_DIR << LIA_FMT_SHIFT, /* Directory */
+	LIA_FMT_SYM = LFT_SYM << LIA_FMT_SHIFT, /* Symbolic link */
+	LIA_FMT_FORK = (int)(4u << LIA_FMT_SHIFT), /* Fork */
+	LIA_FMT_MASK = (int)(LIA_FMT_REG | LIA_FMT_DIR |
+			     LIA_FMT_SYM | LIA_FMT_FORK),
 };
 
 #define LIA_ISFMT_REG(a) (((a) & LIA_FMT_REG) == LIA_FMT_REG)
@@ -244,16 +259,6 @@ struct lean_dir_entry {
 
 #define LEAN_DIR_NAME_MAX (256 * 16 - 12)
 
-/*
- * File type used in dir_entry
- * Analogous to IA_FMT
- */
-enum lean_file_type {
-	LFT_NONE = 0, /* An empty entry */
-	LFT_REG = 1,
-	LFT_DIR = 2,
-	LFT_SYM = 3
-};
 
 /* Time helper functions */
 static inline uint64_t lean_time(struct timespec ts)
