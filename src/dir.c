@@ -33,9 +33,16 @@ static void lean_put_page(struct page *page)
 		put_page(page);
 }
 
-/* TODO: Remount as read-only on corrupt directory entry */
+/* 
+ * Iterate over a directory, emiting dentries to the ctx
+ * If emit_empty is true, empty entries are emitted as well and name_length
+ * sanity checks are disabled
+ * If lock is true, the page containing the dir_entry is locked before emitting
+ * the entry. If ctx->actor returns 1, we assume it has unlocked the page
+ * TODO: Remount as read-only on corrupt directory entry
+ */
 static int lean_readdir(struct inode *inode, struct dir_context *ctx,
-			bool skip_empty, bool lock)
+			bool emit_empty, bool lock)
 {
 	int ret = 0;
 	struct super_block *s = inode->i_sb;
@@ -77,17 +84,17 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 				return -EIO;
 			}
 			/* Deleted entry */
-			if (de->type == LFT_NONE && skip_empty)
+			if (de->type == LFT_NONE && !emit_empty)
 				goto next;
 
 			length = le16_to_cpu(de->name_length);
-			if (skip_empty && unlikely(!length)) {
+			if (!emit_empty && unlikely(!length)) {
 				lean_msg(s, KERN_ERR,
 					 "zero-length directory name in inode %lu",
 					 inode->i_ino);
 				lean_put_page(page);
 				return -EIO;
-			} else if (skip_empty
+			} else if (!emit_empty
 				   && unlikely(length > de->entry_length
 				   * sizeof(struct lean_dir_entry) - 12)) {
 				lean_msg(s, KERN_ERR,
@@ -132,7 +139,7 @@ next:
 
 static int lean_iterate(struct file *file, struct dir_context *ctx)
 {
-	return lean_readdir(file_inode(file), ctx, true, false);
+	return lean_readdir(file_inode(file), ctx, false, false);
 }
 
 const struct file_operations lean_dir_ops = {
@@ -179,7 +186,7 @@ static struct dentry *lean_lookup(struct inode *dir, struct dentry *de,
 	if (de->d_name.len > LEAN_DIR_NAME_MAX)
 		return ERR_PTR(-ENAMETOOLONG);
 
-	err = lean_readdir(dir, &match.ctx, true, false);
+	err = lean_readdir(dir, &match.ctx, false, false);
 	if (err)
 		return ERR_PTR(err);
 	ino = match.ino;
