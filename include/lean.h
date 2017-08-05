@@ -257,7 +257,12 @@ struct lean_dir_entry {
 	uint8_t name[4]; /* May be larger or smaller than 4 */
 } __packed;
 
+#if 1
+#define LEAN_DIR_NAME_MAX 255
+#else
 #define LEAN_DIR_NAME_MAX (256 * 16 - 12)
+#endif
+
 
 
 /* Time helper functions */

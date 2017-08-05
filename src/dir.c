@@ -33,7 +33,7 @@ static void lean_put_page(struct page *page)
 		put_page(page);
 }
 
-/* 
+/*
  * Iterate over a directory, emiting dentries to the ctx
  * If emit_empty is true, empty entries are emitted as well and name_length
  * sanity checks are disabled
@@ -199,6 +199,134 @@ static struct dentry *lean_lookup(struct inode *dir, struct dentry *de,
 		}
 	}
 	return d_splice_alias(inode, de);
+}
+
+struct lean_add_link_data {
+	struct dir_context ctx;
+	uint64_t inode;
+	const unsigned char *name;
+	int err;
+	uint8_t type;
+	uint8_t entry_length;
+	uint8_t name_length;
+	uint8_t preceding;
+};
+
+static int lean_add_link_iter(struct dir_context *ctx, char *name,
+			      int len, loff_t off, u64 ino, unsigned int type)
+{
+	loff_t length;
+	struct page *page;
+	struct inode *dir;
+	struct lean_add_link_data *data = (struct lean_add_link_data *)ctx;
+	/* Can't use container_of because we have an array literal */
+	struct lean_dir_entry *start, *de =
+		(struct lean_dir_entry *)
+		(name - offsetof(struct lean_dir_entry, name));
+	uint8_t size;
+
+	/*
+	 * If there's not enough space for our entry in this sector, or this
+	 * entry isn't empty, skip this entry.
+	 */
+	if (de->type != LFT_NONE ||
+	    data->entry_length * sizeof(struct lean_dir_entry) +
+	    (off & LEAN_SEC_MASK) -
+	    data->preceding * sizeof(struct lean_dir_entry) > LEAN_SEC) {
+		data->preceding = 0;
+		return 0;
+	}
+	start = de - data->preceding;
+	size = de->entry_length + data->preceding;
+	if (data->entry_length > size) {
+		data->preceding = size;
+		return 0;
+	} else if (data->entry_length < size) {
+	/*
+	 * Set up the following empty dir entry; we only need to do this if we
+	 * have extra space following our new entry.
+	 */
+		struct lean_dir_entry *end = start + data->entry_length;
+		memset(end, 0, sizeof(*end));
+		end->type = LFT_NONE;
+		end->entry_length = size - data->entry_length;
+	}
+	
+	memset(start, 0, sizeof(*start));
+	start->inode = cpu_to_le64(data->inode);
+	start->type = data->type;
+	start->entry_length = data->entry_length;
+	start->name_length = cpu_to_le16(data->name_length);
+	memcpy(start->name, data->name, data->name_length);
+	
+	page = kmap_to_page(name);
+	dir = page->mapping->host;
+	length = off - (de->entry_length * sizeof(struct lean_dir_entry));
+	/* Check to see if we went over the end of the directory */
+	if (length > dir->i_size) {
+                i_size_write(dir, length);
+                mark_inode_dirty(dir);
+        }
+        
+	dir->i_mtime = dir->i_ctime = current_time(dir);
+        mark_inode_dirty(dir);
+	
+	data->err = 0;
+	if (IS_DIRSYNC(dir)) {
+                data->err = write_one_page(page, 1);
+                if (!data->err)
+                        data->err = sync_inode_metadata(dir, 1);
+        } else {
+                unlock_page(page);
+        }
+
+	return 1;
+}
+
+int lean_add_link(struct dentry *de, struct inode *inode)
+{
+	int err;
+	struct lean_add_link_data data = {
+		/* We need a cast here because kmap_to_page discards const */
+		.ctx = { (filldir_t)lean_add_link_iter, 0 },
+		.inode = inode->i_ino,
+		.name = de->d_name.name,
+		.type = LEAN_FT(inode->i_mode),
+		.entry_length = LEAN_DIR_ENTRY_LEN(de->d_name.len),
+		.name_length = de->d_name.len,
+		/* 1 == not found, 0 == found, < 0 == found with errors */
+		.err = 1,
+	};
+	
+	err = lean_readdir(inode, &data.ctx, true, true);
+	if (err)
+		return err;
+
+	if (data.err == 1) {
+		struct page *page;
+		struct lean_dir_entry *new;
+		loff_t off = data.ctx.pos -
+			     data.preceding * sizeof(struct lean_dir_entry);
+		
+		if ((off & LEAN_SEC_MASK) + data.entry_length > LEAN_SEC_MASK)
+			off = (off + LEAN_SEC_MASK) & LEAN_SEC_MASK;
+		
+		page = lean_get_page(inode, off >> LEAN_SEC_SHIFT);
+		if (IS_ERR(page))
+			// FAIL
+		lock_page(page);
+
+		data.ctx.pos = off;
+		data.preceding = 0;
+		new = page_address(page) + (off & PAGE_MASK);
+		new->type = LFT_NONE;
+		err = lean_add_link_iter(&data.ctx, new->name, 0,
+					 off, inode->i_ino, DT_UNKNOWN);
+		BUG_ON(!err);
+		lean_put_page(page);
+	}
+
+	return data.err;
 }
 
 const struct inode_operations lean_dir_inode_ops = {
