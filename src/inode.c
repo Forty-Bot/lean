@@ -453,8 +453,7 @@ static uint64_t lean_find_goal_other(struct inode *parent)
 	return parent->i_ino;
 }
 
-struct inode *lean_new_inode(struct inode *dir, umode_t mode,
-			     const struct qstr *qstr)
+struct inode *lean_new_inode(struct inode *dir, umode_t mode)
 {
 	int err;
 	struct super_block *s = dir->i_sb;

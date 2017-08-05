@@ -92,8 +92,7 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino);
 int lean_write_inode(struct inode *inode, struct writeback_control *wbc);
 int lean_setattr(struct dentry *de, struct iattr *attr);
 int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count);
-struct inode *lean_new_inode(struct inode *dir, umode_t mode,
-			     const struct qstr *qstr);
+struct inode *lean_new_inode(struct inode *dir, umode_t mode);
 
 /* file.c */
 extern const struct file_operations lean_file_ops;
