@@ -19,7 +19,26 @@ static inline struct lean_ino_info *LEAN_I(struct inode *inode)
 	return list_entry(inode, struct lean_ino_info, vfs_inode);
 }
 
-static inline unsigned int LEAN_DT(enum lean_file_type type)
+#define LEAN_DIR_ROUND (sizeof(struct lean_dir_entry) - 1)
+#define LEAN_DIR_ENTRY_LEN(name_len) (((name_len) + \
+					offsetof(struct lean_dir_entry, name) + \
+					LEAN_DIR_ROUND) & LEAN_DIR_ROUND)
+
+static inline enum lean_file_type LEAN_FT(umode_t mode)
+{
+	switch(mode) {
+	case S_IFREG:
+		return LFT_REG;
+	case S_IFDIR:
+		return LFT_DIR;
+	case S_IFLNK:
+		return LFT_SYM;
+	default:
+		return LFT_NONE;
+	}
+}
+
+static inline uint8_t LEAN_DT(enum lean_file_type type)
 {
 	switch (type) {
 	case LFT_REG:
