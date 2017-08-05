@@ -279,8 +279,6 @@ uint64_t lean_count_free_sectors(struct super_block *s)
 		count += lean_bitmap_getfree(bitmap);
 		lean_bitmap_put(bitmap);
 	}
-	lean_msg(s, KERN_DEBUG, "sbi->sectors_free = %llu, counted = %llu",
-		 sbi->sectors_free, count);
 	return count;
 #else /* LEAN_TESTING */
 	return percpu_counter_read_positive(&sbi->free_counter);
