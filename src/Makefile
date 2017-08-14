@@ -1,5 +1,5 @@
-#UNAME := 4.9.25-1-lts
 UNAME := $(shell uname -r)
+BUILD_PATH := /lib/modules/$(UNAME)/build
 ccflags-y := -I$(src)/../include
 obj-m := lean.o
 lean-y := super.o inode.o util.o file.o dir.o alloc.o
@@ -8,12 +8,12 @@ ccflags-y += ${MY_CFLAGS}
 CC += ${MY_CFLAGS}
 
 default:
-	make -C /lib/modules/$(UNAME)/build M=$$PWD modules
+	make -C $(BUILD_PATH) M=$$PWD modules
 
 .PHONY: clean
 clean:
-	make -C /lib/modules/$(UNAME)/build M=$$PWD clean
+	make -C $(BUILD_PATH) M=$$PWD clean
 
 .PHONY: install
 install:
-	make -C /lib/modules/$(UNAME)/build M=$$PWD modules_install
+	make -C $(BUILD_PATH) M=$$PWD modules_install
