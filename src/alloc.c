@@ -134,9 +134,9 @@ free_pages:
  * a non-zero return value will stop iteration early and return that value
  * TODO: Add support for starting at any page
  */
-static int lean_bitmap_iterate(struct lean_bitmap *bitmap,
+static int _lean_bitmap_iterate(struct lean_bitmap *bitmap,
 			       int (*func)(char *, uint32_t, int, void *),
-			       void *priv)
+			       void *priv, bool atomic)
 {
 	int i, ret;
 	struct page *page;
@@ -145,8 +145,8 @@ static int lean_bitmap_iterate(struct lean_bitmap *bitmap,
 	uint32_t limit = bitmap->len + off;
 
 	for (i = 0, ret = 0;
-		i < LEAN_ROUND_PAGE(bitmap->len) >> PAGE_SHIFT && !ret;
-		i++, off = 0, limit -= PAGE_SIZE) {
+	     i < LEAN_ROUND_PAGE(bitmap->len) >> PAGE_SHIFT && !ret;
+	     i++, off = 0, limit -= PAGE_SIZE) {
 		page = bitmap->pages[i];
 		/* A null page means this bitmap wasn't acquired with
 		 * lean_bitmap_get properly
@@ -154,13 +154,26 @@ static int lean_bitmap_iterate(struct lean_bitmap *bitmap,
 		 */
 		BUG_ON(!page);
 
-		addr = kmap(page);
+		if (atomic)
+			addr = kmap_atomic(page);
+		else
+			addr = kmap(page);
+
 		ret = func(addr + off, min_t(uint32_t, limit, PAGE_SIZE) - off,
 			   i, priv);
-		kunmap(page);
+
+		if (atomic)
+			kunmap_atomic(addr);
+		else
+			kunmap(page);
 	}
 	return ret;
 }
+
+#define lean_bitmap_iterate(bitmap, func, priv) \
+	_lean_bitmap_iterate(bitmap, func, priv, false)
+#define lean_bitmap_iterate_atomic(bitmap, func, priv) \
+	_lean_bitmap_iterate(bitmap, func, priv, true)
 
 static int lean_bitmap_getfree_iter(char *addr, uint32_t len, int page_nr,
 				    void *priv)
@@ -194,7 +207,8 @@ uint32_t lean_bitmap_getfree(struct lean_bitmap *bitmap)
 		return bitmap->free;
 	}
 
-	lean_bitmap_iterate(bitmap, lean_bitmap_getfree_iter, &used);
+	/* We need to use _atomic since we hold the spinlock */
+	lean_bitmap_iterate_atomic(bitmap, lean_bitmap_getfree_iter, &used);
 	bitmap->free = (bitmap->len << 3) - used;
 	spin_unlock(&bitmap->lock);
 	return bitmap->free;
