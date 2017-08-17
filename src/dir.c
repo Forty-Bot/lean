@@ -54,7 +54,7 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 	if (!ctx->pos)
 		off += sizeof(struct lean_inode);
 
-	for (; n < npages; n++) {
+	for (; ret || n < npages; n++) {
 		unsigned char *kaddr;
 		struct lean_dir_entry *de;
 		struct page *page = lean_get_page(inode, n);
@@ -80,8 +80,8 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 				lean_msg(s, KERN_ERR,
 					 "zero-length directory entry in inode %lu",
 					 inode->i_ino);
-				lean_put_page(page);
-				return -EIO;
+				ret = -EIO;
+				break;
 			}
 			/* Deleted entry */
 			if (de->type == LFT_NONE && !emit_empty)
@@ -92,16 +92,16 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 				lean_msg(s, KERN_ERR,
 					 "zero-length directory name in inode %lu",
 					 inode->i_ino);
-				lean_put_page(page);
-				return -EIO;
+				ret = -EIO;
+				break;
 			} else if (!emit_empty
 				   && unlikely(length > de->entry_length
 				   * sizeof(struct lean_dir_entry) - 12)) {
 				lean_msg(s, KERN_ERR,
 					 "directory name longer than directory entry in inode %lu",
 					 inode->i_ino);
-				lean_put_page(page);
-				return -EIO;
+				ret = -EIO;
+				break;
 			}
 
 			if (unlikely(inode->i_size + sizeof(struct lean_inode)
@@ -111,8 +111,8 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 				lean_msg(s, KERN_ERR,
 					 "directory entry extends past directory size in inode %lu",
 					 inode->i_ino);
-				lean_put_page(page);
-				return -EIO;
+				ret = -EIO;
+				break;
 			}
 
 			if (off	+ length >= PAGE_SIZE)
