@@ -27,9 +27,10 @@ static inline struct lean_ino_info *LEAN_I(struct inode *inode)
 }
 
 #define LEAN_DIR_ROUND (sizeof(struct lean_dir_entry) - 1)
-#define LEAN_DIR_ENTRY_LEN(name_len) (((name_len) + \
+#define LEAN_DIR_ENTRY_LEN(name_len) ((((name_len) + \
 					offsetof(struct lean_dir_entry, name) + \
-					LEAN_DIR_ROUND) & LEAN_DIR_ROUND)
+					LEAN_DIR_ROUND) & ~LEAN_DIR_ROUND) / \
+				      sizeof(struct lean_dir_entry))
 
 static inline enum lean_file_type LEAN_FT(umode_t mode)
 {
