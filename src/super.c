@@ -38,8 +38,7 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
 	uint64_t fsid;
 
-	strncpy((void *)&buf->f_type,
-		LEAN_MAGIC_SUPERBLOCK, sizeof(buf->f_type));
+	buf->f_type = (uint32_t)(*LEAN_MAGIC_SUPERBLOCK);
 	buf->f_bsize = buf->f_frsize = 512;
 	buf->f_blocks = sbi->sectors_total;
 	buf->f_bfree = buf->f_bavail = lean_count_free_sectors(s);
