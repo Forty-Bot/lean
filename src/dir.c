@@ -271,11 +271,14 @@ static int lean_add_link_iter(struct dir_context *ctx, char *name,
 	dir->i_mtime = dir->i_ctime = current_time(dir);
         mark_inode_dirty(dir);
 	
+	set_page_dirty(page);
 	data->err = 0;
 	if (IS_DIRSYNC(dir)) {
-                data->err = write_one_page(page, 1);
+                data->err = lean_write_page(page, 1);
                 if (!data->err)
                         data->err = sync_inode_metadata(dir, 1);
+		else
+			unlock_page(page);
         } else {
                 unlock_page(page);
         }

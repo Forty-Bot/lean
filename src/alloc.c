@@ -301,6 +301,7 @@ uint64_t lean_count_free_sectors(struct super_block *s)
 
 struct lean_try_alloc_data {
 	struct lean_bitmap *bitmap;
+	int err;
 	uint32_t count;
 	uint32_t sector;
 	bool sync;
@@ -334,7 +335,7 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 {
 	bool bytewise_done = false;
 	char *ptr;
-	int i;
+	int i, retries;
 	struct lean_try_alloc_data *data = priv;
 	struct page *page = data->bitmap->pages[page_nr];
 	int tmp = data->off;
@@ -378,8 +379,26 @@ found:
 			break;
 
 	lock_page(page);
+	/* XXX: set_page_dirty returns whether the page is newly dirty */
 	set_page_dirty(page);
-	write_one_page(page, data->sync);
+	
+	retries = 0;
+	do {
+		if (retries)
+			pr_info("writing bitmap page: retry %d", j);
+		data->err = lean_write_page(page, data->sync);
+		j++;
+	} while (data->err == -EAGAIN && retries <= 4);
+	
+	if (data->err) {
+		pr_warn("could not write bitmap page");
+		pr_info("i = %d tmp = %d addr = %p", i, tmp, addr);
+		for (; i > 0; i--)
+			WARN_ON_ONCE(!lean_clear_bit_atomic(&data->bitmap->lock,
+							    tmp + i - 1, addr));
+		unlock_page(page);
+	}
+	
 	return i;
 }
 
@@ -391,7 +410,7 @@ found:
  */
 static uint32_t lean_try_alloc(struct super_block *s,
 			       struct lean_bitmap *bitmap,
-			       uint32_t goal, uint32_t *count)
+			       uint32_t goal, uint32_t *count, int *errp)
 {
 	int found = 0;
 	int goal_page_nr = goal >> PAGE_SHIFT;
@@ -399,6 +418,7 @@ static uint32_t lean_try_alloc(struct super_block *s,
 	char *addr = kmap(goal_page);
 	struct lean_try_alloc_data priv = {
 		.bitmap = bitmap,
+		.err = 0,
 		.count = *count,
 		.off = goal & 7,
 		.sync = s->s_flags & MS_SYNCHRONOUS
@@ -410,7 +430,9 @@ static uint32_t lean_try_alloc(struct super_block *s,
 					- goal_page_nr * PAGE_SIZE
 					- (goal >> 3),
 				    goal_page_nr, &priv);
-	if (found) {
+	if (priv.err)
+		goto err;
+	else if (found) {
 		goal = priv.sector + (goal & ~7);
 		goto out;
 	}
@@ -418,17 +440,21 @@ static uint32_t lean_try_alloc(struct super_block *s,
 	/* Search the whole band */
 	priv.off = 0;
 	found = lean_bitmap_iterate(bitmap, lean_try_alloc_iter, &priv);
-	if (found) {
+	if (priv.err)
+		goto err;
+	else if (found) {
 		goal = priv.sector;
 		goto out;
 	}
 
 	/* No luck */
+err:
 	goal = 0;
-
+	found = 0;
 out:
 	kunmap(goal_page);
 	*count = found;
+	*errp = priv.err;
 	return goal;
 }
 
@@ -476,12 +502,14 @@ uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
 		lean_msg(s, KERN_DEBUG,
 			 "trying to allocate %u blocks in band %llu with goal block %u",
 			 *count, band, band_tgt);
-		alloc = lean_try_alloc(s, bitmap, band_tgt, count);
+		alloc = lean_try_alloc(s, bitmap, band_tgt, count, errp);
 		if (alloc)
 			break;
 
 		lean_bitmap_put(bitmap);
 		band_tgt = 0;
+		if (*errp)
+			return 0;
 	}
 
 	if (!alloc) {
@@ -575,7 +603,10 @@ static int lean_free_sectors_iter(char *addr, uint32_t len, int page_nr,
 
 	lock_page(page);
 	set_page_dirty(page);
-	write_one_page(page, data->sync);
+	if (lean_write_page(page, data->sync)) {
+		unlock_page(page);
+		pr_warn("could not write bitmap page");
+	}
 
 	data->start -= len * 8;
 	data->count -= i;

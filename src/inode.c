@@ -421,10 +421,8 @@ static uint64_t lean_find_goal_other(struct inode *parent)
 	free = lean_bitmap_getfree(bitmap);
 	lean_bitmap_put(bitmap);
 	if (free) {
-		lean_bitmap_put(bitmap);
 		return parent->i_ino;
 	}
-	lean_bitmap_put(bitmap);
 
 	/*
 	 * Try a quadratic search starting at a sector determined by the parent

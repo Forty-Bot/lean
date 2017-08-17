@@ -4,6 +4,13 @@
 #include "lean.h"
 
 #include <linux/fs.h>
+#include <linux/version.h>
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
+#define lean_write_page(page, sync) write_one_page(page, sync)
+#else
+#define lean_write_page(page, sync) write_one_page(page)
+#endif
 
 /*
  * Locks *must* be taken in the following order:

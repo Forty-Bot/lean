@@ -10,6 +10,11 @@
 #include <linux/module.h>
 #include <linux/statfs.h>
 #include <linux/slab.h>
+#include <linux/version.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+#define LEAN_NO_OPTIONS
+#endif
 
 /* Taken from fs/ext2/super.c */
 void lean_msg(struct super_block *s, const char *prefix, const char *fmt, ...)
@@ -246,7 +251,9 @@ static struct super_operations const lean_super_ops = {
 	.put_super = lean_put_super,
 	.sync_fs = lean_sync_fs,
 	.statfs = lean_statfs,
+#ifndef LEAN_NO_OPTIONS
 	.show_options = generic_show_options
+#endif
 };
 
 static int lean_fill_super(struct super_block *s, void *data, int silent)
@@ -390,7 +397,9 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 		goto bitmap_failure;
 	}
 
+#ifndef LEAN_NO_OPTIONS
 	save_mount_options(s, data);
+#endif
 	return lean_write_super(s);
 
 bitmap_failure:
