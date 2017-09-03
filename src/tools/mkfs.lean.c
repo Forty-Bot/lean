@@ -17,70 +17,6 @@
 #include <unistd.h>
 #include <uuid/uuid.h>
 
-int write_at_sector_mmap(int fd, uint64_t sec, const void *buf, size_t n)
-{
-	static int mmap_fd = -1;
-	static void *mmap_addr;
-	off_t length;
-
-	if (fd != mmap_fd) {
-		length = lseek(fd, 0L, SEEK_END);
-		if (length < 0)
-			return -1;
-
-		mmap_addr = mmap(NULL, length, PROT_WRITE, MAP_SHARED, fd, 0);
-		if (mmap_addr == MAP_FAILED)
-			return -1;
-
-		mmap_fd = fd;
-	}
-
-	memcpy(mmap_addr + sec * LEAN_SEC, buf, n);
-	return 0;
-}
-
-/*
- * Writes n bytes of data stored in buf to a sector on fd
- * Returns 0 on success, -1 on system failure, and -2 on write failure
- * errno may contain the error on failure
- */
-int write_at_sector_seek(int fd, uint64_t sec, const void *buf, size_t n)
-{
-	int ret = 0; /* Our return value */
-	int err_save = 0; /* A saved value of errno */
-	ssize_t wr; /* Return value of write() */
-
-	if (lseek(fd, sec * LEAN_SEC, SEEK_SET) < 0) {
-		err_save = errno;
-		ret = -1;
-		goto end;
-	}
-	while (n > 0) {
-		wr = write(fd, buf, n);
-		if (wr < 0) {
-			err_save = errno;
-			ret = -1;
-			goto end;
-		} else if (wr == 0) {
-			ret = -2;
-			goto end;
-		}
-		n -= wr;
-		buf += wr;
-	}
-end:
-	if (fsync(fd)) {
-		/* Don't save the errno if we already errored */
-		if (err_save == 0)
-			err_save = errno;
-		ret = -1;
-	}
-	errno = err_save;
-	return ret;
-}
-
-#define write_at_sector write_at_sector_mmap
-
 /*
  * Set the first n bits of a bitmap to 1
  */
@@ -108,7 +44,7 @@ void toggle_sec(uint8_t *bm, uint64_t sec)
  * Fills in the sectors_free, super_backup, bitmap_start, and root fields of sb
  * returns 0 on success
  */
-uint64_t generate_bm(int fd, struct lean_sb_info *sb)
+uint64_t generate_bm(uint8_t *disk, struct lean_sb_info *sb)
 {
 	size_t bm_size; /* Size of the band bitmap size */
 	uint8_t *bm; /* Bitmap of bands 1 to bands */
@@ -143,8 +79,7 @@ uint64_t generate_bm(int fd, struct lean_sb_info *sb)
 	sb->super_backup = ((sb->sectors_total < band_sec) ?
 			     sb->sectors_total : band_sec) - 1;
 	toggle_sec(bm, sb->super_backup);
-	if (write_at_sector(fd, sb->bitmap_start, bm, bm_size))
-		error(-1, errno, "Unable to write band zero bitmap");
+	memcpy(&disk[sb->bitmap_start * LEAN_SEC], bm, bm_size);
 
 	/* Because all band bitmaps (except band 0's) are identical,
 	 * we can create one bitmap and write it to bands 1 to bands
@@ -152,12 +87,8 @@ uint64_t generate_bm(int fd, struct lean_sb_info *sb)
 	memset(bm, 0, bm_size);
 	fill_bitmap(bm, band_bm_sec);
 
-	for (i = 1; i < bands; i++) {
-		if (write_at_sector(fd, i * band_sec, bm, bm_size)) {
-			error(-1, errno,
-			      "Unable to write band %"PRIu64" bitmap", i);
-		}
-	}
+	for (i = 1; i < bands; i++)
+		memcpy(&disk[i * band_sec * LEAN_SEC], bm, bm_size);
 	return 0;
 }
 
@@ -165,22 +96,22 @@ uint64_t generate_bm(int fd, struct lean_sb_info *sb)
  * Generate a new filesystem on device fd
  * returns 0 on success
  */
-int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc,
-	uint8_t log2_band_sec, const uuid_t uuid,
-	const uint8_t *volume_label, uint64_t sec)
+int generate_fs(int fd, uint8_t *disk, uint8_t sb_offset, uint8_t prealloc,
+		uint8_t log2_band_sec, const uuid_t uuid,
+		const uint8_t *volume_label, uint64_t sec)
 {
 	size_t data_size; /* Root directory data size */
 	struct lean_dir_entry *data; /* Root directory data */
 	struct lean_ino_info *root; /* The root directory */
 	struct lean_inode *root_ino;
-	struct lean_superblock *sb; /* The superblock */
+	struct lean_superblock *sb =
+		(struct lean_superblock *) &disk[sb_offset * LEAN_SEC];
 	struct lean_sb_info *sbi;
 	struct timespec ts; /* Timespec returned by clock_gettime */
 	int64_t time; /* Current time in microseconds */
 
 	sbi = malloc(sizeof(*sbi));
-	sb = malloc(sizeof(*sb));
-	if (!sbi || !sb)
+	if (!sbi)
 		error(-1, errno, "Could not allocate memory for superblock");
 	memset(sbi, 0, sizeof(*sbi));
 
@@ -192,13 +123,13 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc,
 	sbi->volume_label[63] = '\0';
 	sbi->sectors_total = sec;
 	sbi->super_primary = sb_offset;
-	if (generate_bm(fd, sbi))
+	if (generate_bm(disk, sbi))
 		error(-1, 0, "Could not write bitmap to disk");
 
 	data_size = 2 * sizeof(*data);
+	root_ino = (struct lean_inode *) &disk[sbi->root * LEAN_SEC];
 	root = malloc(sizeof(*root));
-	root_ino = malloc(sizeof(*root_ino) + data_size);
-	if (!root || !root_ino)
+	if (!root)
 		error(-1, errno, "Could not allocate memory for root inode");
 	data = (struct lean_dir_entry *) (&root_ino[1]);
 	memset(root_ino, 0, sizeof(*root_ino) + data_size);
@@ -233,11 +164,9 @@ int generate_fs(int fd, uint8_t sb_offset, uint8_t prealloc,
 	data[1].name[1] = '.';
 
 	lean_info_to_inode(root, root_ino);
-	write_at_sector(fd, sbi->root, root_ino, sizeof(*root_ino) + data_size);
 
 	lean_info_to_superblock(sbi, sb);
-	write_at_sector(fd, sbi->super_primary, sb, sizeof(*sb));
-	write_at_sector(fd, sbi->super_backup, sb, sizeof(*sb));
+	memcpy(&disk[sbi->super_backup * LEAN_SEC], sb, sizeof(*sb));
 
 	return 0;
 }
@@ -311,6 +240,7 @@ int main(int argc, char **argv)
 	long sectors; /* Total sectors on the device */
 	off_t size; /* Size of the device in bytes */
 	uuid_t uuid; /* UUID to use */
+	void *mmap_addr;
 
 	uuid_clear(uuid);
 
@@ -430,6 +360,10 @@ int main(int argc, char **argv)
 	while (band_sec >>= 1)
 		log2_band_sec++;
 
-	return generate_fs(fd, sb_offset, prealloc, log2_band_sec, uuid,
-			   volume_name, sectors);
+	mmap_addr = mmap(NULL, size, PROT_WRITE, MAP_SHARED, fd, 0);
+	if (mmap_addr == MAP_FAILED)
+		error(-1, errno, "Failed to mmap file");
+
+	return generate_fs(fd, mmap_addr, sb_offset, prealloc, log2_band_sec,
+			   uuid, volume_name, sectors);
 }
