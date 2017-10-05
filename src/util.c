@@ -157,12 +157,12 @@ void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li)
 	li->extent_count = ii->extent_count;
 	if (li->extent_count > LEAN_INODE_EXTENTS)
 		li->extent_count = LEAN_INODE_EXTENTS;
-	li->indirect_count = tocpu32(ii->indirect_count);
+	li->indirect_count = tole32(ii->indirect_count);
 #ifndef __KERNEL__
-	li->link_count = tocpu32(ii->link_count);
-	li->uid = tocpu32(ii->uid);
-	li->gid = tocpu32(ii->gid);
-	li->attr = tocpu32(ii->attr);
+	li->link_count = tole32(ii->link_count);
+	li->uid = tole32(ii->uid);
+	li->gid = tole32(ii->gid);
+	li->attr = tole32(ii->attr);
 	li->size = tole64(ii->size);
 	li->sector_count = tole64(ii->sector_count);
 	li->time_access = tole64(ii->time_access);
@@ -175,7 +175,7 @@ void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li)
 	li->fork = tole64(ii->fork);
 	for (i = 0; i < LEAN_INODE_EXTENTS; i++) {
 		li->extent_starts[i] = tole64(ii->extent_starts[i]);
-		li->extent_sizes[i] = tocpu32(ii->extent_sizes[i]);
+		li->extent_sizes[i] = tole32(ii->extent_sizes[i]);
 	}
 	li->checksum = tole32(lean_checksum(li, sizeof(*li)));
 }
