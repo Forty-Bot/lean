@@ -342,12 +342,39 @@ static int lean_add_link(struct dentry *de, struct inode *inode)
 				return -EINVAL;
 		} else
 			lean_put_page(page);
+		lean_msg(inode->i_sb, KERN_DEBUG, "created dir_entry... %16ph", new);
 	}
 
 	return data.err;
 }
 
+static int lean_create(struct inode *dir, struct dentry *dentry,
+		       umode_t mode, bool excl)
+{
+	int err;
+	struct inode *inode;
+
+	lean_msg(dir->i_sb, KERN_DEBUG, "trying to allocate new inode...");
+	inode = lean_new_inode(dir, mode);
+	if (IS_ERR(inode))
+		return PTR_ERR(inode);
+
+	lean_msg(dir->i_sb, KERN_DEBUG, "got inode, linking to dir...");
+	err = lean_add_link(dentry, inode);
+	if (err) {
+		inode_dec_link_count(inode);
+		unlock_new_inode(inode);
+		iput(inode);
+		return err;
+	}
+
+	unlock_new_inode(inode);
+	d_instantiate(dentry, inode);
+	return 0;
+}
+
 const struct inode_operations lean_dir_inode_ops = {
+	.create = lean_create,
 	.lookup = lean_lookup,
-	.setattr = lean_setattr
+	.setattr = lean_setattr,
 };
