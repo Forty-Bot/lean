@@ -1,5 +1,7 @@
+#include "mkfs.h"
 #include "lean.h"
 
+#include <dirent.h>
 #include <endian.h>
 #include <errno.h>
 #include <error.h>
@@ -89,7 +91,7 @@ uint64_t generate_bm(uint8_t *disk, struct lean_sb_info *sb)
 
 	for (i = 1; i < bands; i++)
 		memcpy(&disk[i * band_sec * LEAN_SEC], bm, bm_size);
-	
+
 	free(bm);
 	return 0;
 }
@@ -98,7 +100,7 @@ uint64_t generate_bm(uint8_t *disk, struct lean_sb_info *sb)
  * Generate a new filesystem on device fd
  * returns 0 on success
  */
-int generate_fs(int fd, uint8_t *disk, struct lean_sb_info *sbi,
+int generate_fs(uint8_t *disk, struct lean_sb_info *sbi,
 		struct lean_ino_info **rootp)
 {
 	size_t data_size; /* Root directory data size */
@@ -160,6 +162,56 @@ int generate_fs(int fd, uint8_t *disk, struct lean_sb_info *sbi,
 	return 0;
 }
 
+uint64_t alloc_sectors(uint8_t *disk, struct lean_sb_info *sbi, uint64_t goal,
+		      uint32_t *count, int *errp);
+struct lean_ino_info *create_inode(uint8_t *disk, struct lean_sb_info *sbi,
+				   struct statx *stat);
+int lean_add_link(uint8_t *disk, struct lean_sb_info *sbi,
+		  struct lean_ino_info *dir, struct lean_ino_info *inode);
+
+int populate_fs(uint8_t *disk, struct lean_sb_info *sbi,
+		struct lean_ino_info *root, int basefd)
+{
+	DIR *dir;
+	struct dirent *de;
+
+	dir = fdopendir(basefd);
+	if (!dir) {
+		int errno_save = errno;
+		error(-1, errno_save, "Could not open \"%s\" as a directory",
+		      getpath_unsafe(basefd));
+	}
+
+	do {
+		errno = 0;
+		de = readdir(dir);
+		switch (de->d_type) {
+		case DT_REG:
+			break;
+		case DT_DIR:
+			break;
+		case DT_BLK:
+		case DT_CHR:
+		case DT_FIFO:
+		case DT_LNK:
+		case DT_SOCK:
+			printf("Skipping \"%s\": unsupported type",
+			       de->d_name);
+		case DT_UNKNOWN:
+			/* TODO use statx to determine file type */
+			break;
+		default:
+			break;
+		}
+	} while (de);
+
+	if (errno) {
+		int errno_save = errno;
+		error(-1, errno_save, "Error while reading directory \"%s\"",
+		      getpath_unsafe(basefd));
+	}
+}
+
 /*
  * Rounds to the next highest power of 2
  */
@@ -206,6 +258,7 @@ int parse_long(const char *str, long *n)
 "Format a disk as a LEAN filesystem\n" \
 "OPTIONS:\n" \
 "\t-b sectors-per-band\n" \
+"\t-d base-directory\n" \
 "\t-f superblock-offset\n" \
 "\t-n volume-label\n" \
 "\t-p default-allocated-sectors\n" \
@@ -218,6 +271,7 @@ int main(int argc, char **argv)
 	char *device; /* The name of the target device */
 	char uuid_string[37]; /* The string representation of the UUID */
 	int c; /* The option returned by UUID */
+	int basefd = -1;
 	int fd; /* The file descriptor of the device */
 	int ret;
 	long bands;
@@ -239,7 +293,7 @@ int main(int argc, char **argv)
 
 	uuid_clear(uuid);
 
-	while ((c = getopt(argc, argv, "b:f:hn:p:U:")) != -1) {
+	while ((c = getopt(argc, argv, "b:d:f:hn:p:U:")) != -1) {
 		switch (c) {
 		case 'b':
 			if (parse_long(optarg, &band_sec))
@@ -249,6 +303,11 @@ int main(int argc, char **argv)
 				error(-1, 0,
 				      "Sectors per band must be greater than or equal to 4096 and a power of 2");
 			}
+			break;
+		case 'd':
+			basefd = open(optarg, O_RDONLY | O_DIRECTORY);
+			if (basefd == -1)
+				error(-1, errno, "Could not open %s", optarg);
 			break;
 		case 'f':
 			if (parse_long(optarg, &sbi->super_primary))
@@ -363,9 +422,13 @@ int main(int argc, char **argv)
 	if (mmap_addr == MAP_FAILED)
 		error(-1, errno, "Failed to mmap file");
 
-	ret = generate_fs(fd, mmap_addr, sbi, &root);
+	ret = generate_fs(mmap_addr, sbi, &root);
 	if (ret)
 		return ret;
 
-	return 0;
+	if (basefd != -1) {
+		printf("Writing base data to disk\n");
+		ret = populate_fs(mmap_addr, sbi, root, basefd);
+	}
+	return ret;
 }
