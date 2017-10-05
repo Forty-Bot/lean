@@ -52,7 +52,7 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 	buf->f_namelen = LEAN_DIR_NAME_MAX;
 	buf->f_flags = s->s_flags;
 
-#ifdef LEAN_TESTING
+#if 0
 	lean_msg(s, KERN_DEBUG, "bs %llu bc %llu bms %llu",
 		 sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
 #endif /* LEAN_TESTING */
@@ -142,11 +142,11 @@ static int lean_sync_super(struct super_block *s, int wait)
  */
 static int lean_sync_fs(struct super_block *s, int wait)
 {
-	int err;
 	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
 
 	if (sbi->state & LEAN_STATE_CLEAN) {
-		err = mutex_lock_interruptible(&sbi->lock);
+		int err = mutex_lock_interruptible(&sbi->lock);
+
 		if (err)
 			return err;
 		sbi->state &= ~LEAN_STATE_CLEAN;
@@ -159,7 +159,7 @@ static int lean_sync_fs(struct super_block *s, int wait)
  * Synchronizes the filesystem to disk if it is mounted r/w
  * May take s->s_fs_info->lock
  */
-int lean_write_super(struct super_block *s)
+static int lean_write_super(struct super_block *s)
 {
 	if (!(s->s_flags & MS_RDONLY))
 		return lean_sync_fs(s, true);
