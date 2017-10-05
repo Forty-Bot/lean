@@ -12,6 +12,7 @@ Significant reference made to
 All code in this repository should conform to the
 [Linux kernel coding style](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/process/coding-style.rst).
 Current areas of improvement include
+
 	* Adding an option to populate a newly-created filesystem in mkfs
 	* Creating an automate-testing framework
 	* Deleting files
