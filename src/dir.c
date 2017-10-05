@@ -54,7 +54,7 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 	if (!ctx->pos)
 		off += sizeof(struct lean_inode);
 
-	for (; ret || n < npages; n++) {
+	for (; !ret && n < npages; n++) {
 		unsigned char *kaddr;
 		struct lean_dir_entry *de;
 		struct page *page = lean_get_page(inode, n);
@@ -195,7 +195,7 @@ static struct dentry *lean_lookup(struct inode *dir, struct dentry *de,
 		inode = lean_iget(s, ino);
 		if (IS_ERR(inode)) {
 			lean_msg(s, KERN_ERR, "cannot read inode %lu", ino);
-			return ERR_PTR(PTR_ERR(inode));
+			return ERR_CAST(inode);
 		}
 	}
 	return d_splice_alias(inode, de);
@@ -251,14 +251,14 @@ static int lean_add_link_iter(struct dir_context *ctx, char *name,
 		end->type = LFT_NONE;
 		end->entry_length = size - data->entry_length;
 	}
-	
+
 	memset(start, 0, sizeof(*start));
 	start->inode = cpu_to_le64(data->inode);
 	start->type = data->type;
 	start->entry_length = data->entry_length;
 	start->name_length = cpu_to_le16(data->name_length);
 	memcpy(start->name, data->name, data->name_length);
-	
+
 	page = kmap_to_page(name);
 	dir = page->mapping->host;
 	length = off - (de->entry_length * sizeof(struct lean_dir_entry));
@@ -267,10 +267,10 @@ static int lean_add_link_iter(struct dir_context *ctx, char *name,
                 i_size_write(dir, length);
                 mark_inode_dirty(dir);
         }
-        
+
 	dir->i_mtime = dir->i_ctime = current_time(dir);
         mark_inode_dirty(dir);
-	
+
 	set_page_dirty(page);
 	data->err = 0;
 	if (IS_DIRSYNC(dir)) {
@@ -286,9 +286,10 @@ static int lean_add_link_iter(struct dir_context *ctx, char *name,
 	return 1;
 }
 
-int lean_add_link(struct dentry *de, struct inode *inode)
+static int lean_add_link(struct dentry *de, struct inode *inode)
 {
 	int err;
+	struct inode *dir = d_inode(de->d_parent);
 	struct lean_add_link_data data = {
 		/* We need a cast here because kmap_to_page discards const */
 		.ctx = { (filldir_t)lean_add_link_iter, 0 },
@@ -300,8 +301,8 @@ int lean_add_link(struct dentry *de, struct inode *inode)
 		/* 1 == not found, 0 == found, < 0 == found with errors */
 		.err = 1,
 	};
-	
-	err = lean_readdir(inode, &data.ctx, true, true);
+
+	err = lean_readdir(dir, &data.ctx, true, true);
 	if (err)
 		return err;
 
@@ -310,23 +311,37 @@ int lean_add_link(struct dentry *de, struct inode *inode)
 		struct lean_dir_entry *new;
 		loff_t off = data.ctx.pos -
 			     data.preceding * sizeof(struct lean_dir_entry);
-		
+
 		if ((off & LEAN_SEC_MASK) + data.entry_length > LEAN_SEC_MASK)
 			off = (off + LEAN_SEC_MASK) & LEAN_SEC_MASK;
-		
-		page = lean_get_page(inode, off >> LEAN_SEC_SHIFT);
+
+		if (!off) {
+			WARN_ON(true);
+			return -EINVAL;
+		}
+
+		page = lean_get_page(dir, off >> PAGE_SHIFT);
 		if (IS_ERR(page))
-			// FAIL
+			return PTR_ERR(page);
 		lock_page(page);
 
 		data.ctx.pos = off;
 		data.preceding = 0;
 		new = page_address(page) + (off & PAGE_MASK);
 		new->type = LFT_NONE;
+		new->entry_length = data.entry_length;
+
+		/* XXX: returns 1 on success */
 		err = lean_add_link_iter(&data.ctx, new->name, 0,
 					 off, inode->i_ino, DT_UNKNOWN);
-		BUG_ON(!err);
-		lean_put_page(page);
+		if (!err || data.err) {
+			lean_msg(inode->i_sb, KERN_DEBUG, "failed to extend directory err = %d data.err = %d", err, data.err);
+			unlock_page(page);
+			lean_put_page(page);
+			if (!err)
+				return -EINVAL;
+		} else
+			lean_put_page(page);
 	}
 
 	return data.err;
