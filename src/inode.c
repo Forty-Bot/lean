@@ -120,11 +120,22 @@ static int lean_writepages(struct address_space *mapping,
 	return mpage_writepages(mapping, wbc, lean_get_block);
 }
 
+/*
+ * Ripped from fs/ext4/inode.c
+ */
+int lean_set_page_dirty(struct page *page)
+{
+	pr_info("setting page %p dirty with flags %pGp", page, &page->flags);
+	WARN_ON_ONCE(!PageLocked(page) && !PageDirty(page));
+	return __set_page_dirty_nobuffers(page);
+}
+
 static const struct address_space_operations lean_aops = {
 	.readpage = lean_readpage,
 	.readpages = lean_readpages,
 	.writepage = lean_writepage,
-	.writepages = lean_writepages
+	.writepages = lean_writepages,
+	.set_page_dirty = lean_set_page_dirty,
 };
 
 struct inode *lean_iget(struct super_block *s, uint64_t ino)
@@ -244,7 +255,7 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 		return -EIO;
 	raw = (struct lean_inode *)bh->b_data;
 
-	attr = (raw->attr & ~LIA_POSIX_MASK)
+	attr = (le32_to_cpu(raw->attr) & ~LIA_POSIX_MASK)
 		| (inode->i_mode & LIA_POSIX_MASK);
 	if (S_ISREG(inode->i_mode))
 		attr |= LIA_FMT_REG;

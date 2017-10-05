@@ -78,11 +78,12 @@ static int lean_read_bitmap_pages(struct file *file,
 	return mpage_readpages(mapping, pages, nr_pages, lean_get_bitmap_block);
 }
 
-const struct address_space_operations lean_bitmap_aops = {
+static const struct address_space_operations lean_bitmap_aops = {
 	.writepage = lean_write_bitmap_page,
 	.readpage = lean_read_bitmap_page,
 	.writepages = lean_write_bitmap_pages,
-	.readpages = lean_read_bitmap_pages
+	.readpages = lean_read_bitmap_pages,
+	.set_page_dirty = lean_set_page_dirty,
 };
 
 void __lean_bitmap_put(struct lean_bitmap *bitmap, int count)
@@ -139,7 +140,6 @@ static int _lean_bitmap_iterate(struct lean_bitmap *bitmap,
 			       void *priv, bool atomic)
 {
 	int i, ret;
-	struct page *page;
 	char *addr;
 	uint32_t off = bitmap->off;
 	uint32_t limit = bitmap->len + off;
@@ -147,7 +147,7 @@ static int _lean_bitmap_iterate(struct lean_bitmap *bitmap,
 	for (i = 0, ret = 0;
 	     i < LEAN_ROUND_PAGE(bitmap->len) >> PAGE_SHIFT && !ret;
 	     i++, off = 0, limit -= PAGE_SIZE) {
-		page = bitmap->pages[i];
+		struct page *page = bitmap->pages[i];
 		/* A null page means this bitmap wasn't acquired with
 		 * lean_bitmap_get properly
 		 * TODO: Remount read-only and WARN instead
@@ -278,13 +278,12 @@ void lean_bitmap_cache_destroy(struct super_block *s)
 uint64_t lean_count_free_sectors(struct super_block *s)
 {
 	int i;
-	struct lean_bitmap *bitmap;
 	struct lean_sb_info *sbi = s->s_fs_info;
 	uint64_t count = 0;
 
 #ifdef LEAN_TESTING
 	for (i = 0; i < sbi->band_count; i++) {
-		bitmap = lean_bitmap_get(s, i);
+		struct lean_bitmap *bitmap = lean_bitmap_get(s, i);
 		if (IS_ERR(bitmap)) {
 			lean_msg(s, KERN_WARNING,
 				 "could not read band %d bitmap", i);
@@ -385,9 +384,9 @@ found:
 	retries = 0;
 	do {
 		if (retries)
-			pr_info("writing bitmap page: retry %d", j);
+			pr_info("writing bitmap page: retry %d", retries);
 		data->err = lean_write_page(page, data->sync);
-		j++;
+		retries++;
 	} while (data->err == -EAGAIN && retries <= 4);
 	
 	if (data->err) {

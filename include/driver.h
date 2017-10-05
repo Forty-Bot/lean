@@ -102,6 +102,7 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc);
 int lean_setattr(struct dentry *de, struct iattr *attr);
 int lean_extend_inode(struct inode *inode, uint64_t *sector, uint32_t *count);
 struct inode *lean_new_inode(struct inode *dir, umode_t mode);
+int lean_set_page_dirty(struct page *page);
 
 /* file.c */
 extern const struct file_operations lean_file_ops;
