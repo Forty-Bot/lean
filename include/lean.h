@@ -12,6 +12,7 @@
 #define le64 __le64
 struct lean_bitmap;
 #else /* __KERNEL__ */
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -263,7 +264,11 @@ struct lean_dir_entry {
 #define LEAN_DIR_NAME_MAX (256 * 16 - 12)
 #endif
 
-
+#define LEAN_DIR_ROUND (sizeof(struct lean_dir_entry) - 1)
+#define LEAN_DIR_ENTRY_LEN(name_len) ((((name_len) + \
+					offsetof(struct lean_dir_entry, name) + \
+					LEAN_DIR_ROUND) & ~LEAN_DIR_ROUND) / \
+				      sizeof(struct lean_dir_entry))
 
 /* Time helper functions */
 static inline uint64_t lean_time(struct timespec ts)
