@@ -92,6 +92,9 @@ struct lean_sb_info {
 	struct lean_bitmap *bitmap_cache;
 	struct buffer_head *sbh;
 	struct buffer_head *sbh_backup;
+#else
+	uint8_t *disk;
+	int fd;
 #endif
 };
 

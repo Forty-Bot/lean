@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <linux/stat.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 static inline int statx(int dirfd, const char *pathname, int flags,
@@ -12,17 +13,12 @@ static inline int statx(int dirfd, const char *pathname, int flags,
 	return syscall(SYS_statx, dirfd, pathname, flags, mask, statxbuf);
 }
 
-/* 
- * WARNING: Stomps on cwd and errno!
- * Do not use if you (or anyone else) needs to do file I/O later!
- * For use only immediately before termination.
- */
-static inline char *getpath_unsafe(int fd)
+static inline loff_t copy_file_range(int fd_in, loff_t *off_in, int fd_out,
+				     loff_t *off_out, size_t len,
+				     unsigned int flags)
 {
-	if (fchdir(fd) == -1)
-		return NULL;
-	
-	return get_current_dir_name();
+	return syscall(__NR_copy_file_range, fd_in, off_in, fd_out, off_out,
+		       len, flags);
 }
 
 #endif /* MKFS_H */

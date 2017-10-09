@@ -1,11 +1,12 @@
 #include "mkfs.h"
 #include "lean.h"
 
-#include <dirent.h>
+#include <assert.h>
 #include <endian.h>
 #include <errno.h>
 #include <error.h>
 #include <fcntl.h>
+#include <fts.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -15,6 +16,7 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <time.h>
 #include <unistd.h>
 #include <uuid/uuid.h>
@@ -46,7 +48,7 @@ void toggle_sec(uint8_t *bm, uint64_t sec)
  * Fills in the sectors_free, super_backup, bitmap_start, and root fields of sb
  * returns 0 on success
  */
-uint64_t generate_bm(uint8_t *disk, struct lean_sb_info *sb)
+uint64_t generate_bm(struct lean_sb_info *sbi)
 {
 	size_t bm_size; /* Size of the band bitmap size */
 	uint8_t *bm; /* Bitmap of bands 1 to bands */
@@ -56,9 +58,9 @@ uint64_t generate_bm(uint8_t *disk, struct lean_sb_info *sb)
 	uint64_t band_bm_sec; /* Number of sectors to hold a band's bitmap */
 	uint64_t zero_sec; /* Number of used sectors in band zero */
 
-	band_sec = 1 << sb->log2_band_sectors;
+	band_sec = 1 << sbi->log2_band_sectors;
 	band_bm_sec = band_sec >> 12;
-	bands = 1 + (sb->sectors_total - 1)/band_sec;
+	bands = 1 + (sbi->sectors_total - 1)/band_sec;
 
 	bm_size = band_sec / 8;
 	bm = malloc(bm_size);
@@ -67,21 +69,21 @@ uint64_t generate_bm(uint8_t *disk, struct lean_sb_info *sb)
 	memset(bm, 0, bm_size);
 
 	/* Write the band 0 bitmap */
-	sb->bitmap_start = sb->super_primary + 1;
-	sb->root = sb->bitmap_start + band_bm_sec;
+	sbi->bitmap_start = sbi->super_primary + 1;
+	sbi->root = sbi->bitmap_start + band_bm_sec;
 	/* We should subtract 1 here. but it's added back in because
 	 * block numbers start at 0
 	 */
-	zero_sec = sb->root + sb->prealloc;
+	zero_sec = sbi->root + sbi->prealloc;
 	fill_bitmap(bm, zero_sec);
 	/* [initial sectors (including band 0's bitmap)] + [superblock backup],
 	 * [each band's bitmap - band 0's bitmap] */
-	sb->sectors_free = sb->sectors_total -
+	sbi->sectors_free = sbi->sectors_total -
 			   (zero_sec + 1 + (bands - 1) * band_bm_sec);
-	sb->super_backup = ((sb->sectors_total < band_sec) ?
-			     sb->sectors_total : band_sec) - 1;
-	toggle_sec(bm, sb->super_backup);
-	memcpy(&disk[sb->bitmap_start * LEAN_SEC], bm, bm_size);
+	sbi->super_backup = ((sbi->sectors_total < band_sec) ?
+			     sbi->sectors_total : band_sec) - 1;
+	toggle_sec(bm, sbi->super_backup);
+	memcpy(&sbi->disk[sbi->bitmap_start * LEAN_SEC], bm, bm_size);
 
 	/* Because all band bitmaps (except band 0's) are identical,
 	 * we can create one bitmap and write it to bands 1 to bands
@@ -90,17 +92,17 @@ uint64_t generate_bm(uint8_t *disk, struct lean_sb_info *sb)
 	fill_bitmap(bm, band_bm_sec);
 
 	for (i = 1; i < bands; i++)
-		memcpy(&disk[i * band_sec * LEAN_SEC], bm, bm_size);
+		memcpy(&sbi->disk[i * band_sec * LEAN_SEC], bm, bm_size);
 
 	free(bm);
 	return 0;
 }
 
 /*
- * Generate a new filesystem on device fd
+ * Generate a new filesystem
  * returns 0 on success
  */
-int generate_fs(uint8_t *disk, struct lean_sb_info *sbi,
+int generate_fs(struct lean_sb_info *sbi,
 		struct lean_ino_info **rootp)
 {
 	size_t data_size; /* Root directory data size */
@@ -108,16 +110,17 @@ int generate_fs(uint8_t *disk, struct lean_sb_info *sbi,
 	struct lean_ino_info *root; /* The root directory */
 	struct lean_inode *root_ino;
 	struct lean_superblock *sb =
-		(struct lean_superblock *) &disk[sbi->super_primary * LEAN_SEC];
+		(struct lean_superblock *)
+		&sbi->disk[sbi->super_primary * LEAN_SEC];
 	struct timespec ts; /* Timespec returned by clock_gettime */
 	int64_t time; /* Current time in microseconds */
 
 	sbi->state = LEAN_STATE_CLEAN;
-	if (generate_bm(disk, sbi))
+	if (generate_bm(sbi))
 		error(-1, 0, "Could not write bitmap to disk");
 
 	data_size = 2 * sizeof(*data);
-	root_ino = (struct lean_inode *) &disk[sbi->root * LEAN_SEC];
+	root_ino = (struct lean_inode *) &sbi->disk[sbi->root * LEAN_SEC];
 	root = malloc(sizeof(*root));
 	if (!root)
 		error(-1, errno, "Could not allocate memory for root inode");
@@ -157,59 +160,181 @@ int generate_fs(uint8_t *disk, struct lean_sb_info *sbi,
 	lean_info_to_inode(root, root_ino);
 
 	lean_info_to_superblock(sbi, sb);
-	memcpy(&disk[sbi->super_backup * LEAN_SEC], sb, sizeof(*sb));
+	memcpy(&sbi->disk[sbi->super_backup * LEAN_SEC], sb, sizeof(*sb));
 
 	return 0;
 }
 
-uint64_t alloc_sectors(uint8_t *disk, struct lean_sb_info *sbi, uint64_t goal,
-		      uint32_t *count, int *errp);
-struct lean_ino_info *create_inode(uint8_t *disk, struct lean_sb_info *sbi,
+/* Note to implementers: use errno to return errors for alloc_sectors and
+ * create_inode. Or just crash :P */
+uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,
+		       uint32_t *count);
+int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li);
+struct lean_ino_info *create_inode(struct lean_sb_info *sbi,
 				   struct statx *stat);
-int lean_add_link(uint8_t *disk, struct lean_sb_info *sbi,
-		  struct lean_ino_info *dir, struct lean_ino_info *inode);
+int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
+		  struct lean_ino_info *inode);
+void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *dir);
 
-int populate_fs(uint8_t *disk, struct lean_sb_info *sbi,
-		struct lean_ino_info *root, int basefd)
+/*
+ * This function returns the sector which is immediately after the end
+ * of the last extent in an inode
+ */
+static uint64_t find_next_sector(struct lean_ino_info *li)
 {
-	DIR *dir;
-	struct dirent *de;
+	return li->extent_starts[li->extent_count - 1]
+		+ li->extent_sizes[li->extent_count - 1];
+}
 
-	dir = fdopendir(basefd);
-	if (!dir) {
-		int errno_save = errno;
-		error(-1, errno_save, "Could not open \"%s\" as a directory",
-		      getpath_unsafe(basefd));
+uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
+		           uint32_t *count)
+{
+	uint64_t sector;
+
+	assert(*count <= 1 << 31);
+
+	sector = find_next_sector(li);
+	sector = alloc_sectors(sbi, sector, count);
+	if (errno)
+		return 0;
+
+	if (sector == li->extent_starts[li->extent_count - 1]
+			+ li->extent_sizes[li->extent_count - 1]) {
+		li->extent_sizes[li->extent_count - 1] += *count;
+	} else {
+		/* We need to add another extent */
+		if (li->extent_count >= 6)
+			error(-1, 0,
+			      "Cannot create more than 6 extents");
+		li->extent_starts[li->extent_count] = sector;
+		li->extent_sizes[li->extent_count] = *count;
+		li->extent_count++;
 	}
 
-	do {
-		errno = 0;
-		de = readdir(dir);
-		switch (de->d_type) {
-		case DT_REG:
-			break;
-		case DT_DIR:
-			break;
-		case DT_BLK:
-		case DT_CHR:
-		case DT_FIFO:
-		case DT_LNK:
-		case DT_SOCK:
-			printf("Skipping \"%s\": unsupported type",
-			       de->d_name);
-		case DT_UNKNOWN:
-			/* TODO use statx to determine file type */
-			break;
-		default:
-			break;
+	return sector;
+}
+
+struct lean_ino_info *create_file(struct lean_sb_info *sbi, FTSENT *f)
+{
+	int fd;
+	loff_t off = 0;
+	struct lean_ino_info *li;
+	struct statx stat;
+	uint64_t size;
+
+	if (!statx(AT_FDCWD, f->fts_accpath, 0,
+		   STATX_ALL, &stat))
+		error(-1, errno, "Error stat-ing file \"%s\"",
+		      f->fts_path);
+	size = stat.stx_size;
+
+	li = create_inode(sbi, &stat);
+
+	fd = open(f->fts_accpath, O_RDONLY);
+	if (fd == -1)
+		error(-1, errno, "Could not open \"%s\" for reading",
+		      f->fts_path);
+
+	/* Let the type-specific code in populate_fs handle non-regular files */
+	if (!LIA_ISFMT_REG(li->attr))
+		goto out;
+
+	while (size > 0) {
+		ssize_t n = size;
+		loff_t doff;
+		uint32_t count = (n + LEAN_SEC_MASK) >> LEAN_SEC_SHIFT;
+		uint64_t sector = extend_inode(sbi, li, &count);
+
+		if (!sector)
+			error(-1, errno, "Could not extend inode of \"%s\"",
+			      f->fts_path);
+
+		doff = sector * LEAN_SEC;
+		n = copy_file_range(fd, &off, sbi->fd, &doff,
+				    n < count ? n : count, 0);
+		if (n == -1)
+			error(-1, errno, "Error copying data from file \"%s\"",
+				f->fts_path);
+
+		size -= n;
+	}
+
+out:
+	/* TODO: check for errors, may be unnecessary */
+	add_link(sbi, (struct lean_ino_info *)f->fts_pointer, li);
+	write_inode(sbi, li);
+	return li;
+}
+
+struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
+{
+	FTSENT *child = fts_children(fts, FTS_NAMEONLY);
+	struct lean_ino_info *li = create_file(sbi, f);
+	int64_t size = 0;
+
+	/* Try to allocate all the space for direntries up front */
+	for(; child; child = child->fts_link)
+		size += LEAN_DIR_ENTRY_LEN(child->fts_namelen);
+	while (size > 0) {
+		uint32_t count = (size + LEAN_SEC_MASK) >> LEAN_SEC_SHIFT;
+
+		extend_inode(sbi, li, &count);
+		size -= count * LEAN_SEC;
+	}
+
+	create_dotfiles(sbi, li);
+	return li;
+}
+
+int populate_fs(struct lean_sb_info *sbi,
+		struct lean_ino_info *root, FTS *fts)
+{
+	FTSENT *f;
+
+	/* XXX: fts_read sets errno whenever it returns NULL, unlike readdir! */
+	while ((f = fts_read(fts))) {
+		if (f->fts_level <= 0) {
+			f->fts_pointer = root;
+			continue;
 		}
-	} while (de);
 
-	if (errno) {
-		int errno_save = errno;
-		error(-1, errno_save, "Error while reading directory \"%s\"",
-		      getpath_unsafe(basefd));
+		switch (f->fts_info) {
+		case FTS_NS:
+			/* what? */
+		case FTS_DNR:
+		case FTS_ERR:
+			error(-1, errno,
+			      "Error while populating disk at \"%s\"",
+			      f->fts_path);
+		case FTS_D:
+			f->fts_pointer = create_dir(sbi, fts, f);
+			break;
+		case FTS_DC:
+			printf("Unsupported loop: \"%s\" is the same directory as \"%s\"",
+			       f->fts_path, f->fts_cycle->fts_path);
+			break;
+		case FTS_DP:
+			free(f->fts_pointer);
+			break;
+		case FTS_F:
+		case FTS_NSOK:
+			free(create_file(sbi, f));
+			break;
+		case FTS_SL:
+		case FTS_SLNONE:
+			/* TODO: Implement symbolic links */
+		case FTS_DOT:
+			/* what? */
+		case FTS_DEFAULT:
+		default:
+			printf("Unsupported file type for file \"%s\"",
+			       f->fts_path);
+		}
 	}
+	if (errno)
+		error(-1, errno, "Error populating disk");
+
+	return 0;
 }
 
 /*
@@ -270,9 +395,8 @@ int main(int argc, char **argv)
 	bool band_sec_set = false; /* Set if -b is passed */
 	char *device; /* The name of the target device */
 	char uuid_string[37]; /* The string representation of the UUID */
+	FTS *fts = NULL;
 	int c; /* The option returned by UUID */
-	int basefd = -1;
-	int fd; /* The file descriptor of the device */
 	int ret;
 	long bands;
 	long band_sec; /* Sectors in a band */
@@ -282,7 +406,6 @@ int main(int argc, char **argv)
 	struct lean_sb_info *sbi;
 	struct lean_ino_info *root;
 	uuid_t uuid; /* UUID to use */
-	void *mmap_addr;
 
 	sbi = malloc(sizeof(*sbi));
 	if (!sbi)
@@ -305,9 +428,17 @@ int main(int argc, char **argv)
 			}
 			break;
 		case 'd':
-			basefd = open(optarg, O_RDONLY | O_DIRECTORY);
-			if (basefd == -1)
-				error(-1, errno, "Could not open %s", optarg);
+			{
+				char *paths[] = {optarg, NULL};
+
+				fts = fts_open(paths, FTS_COMFOLLOW
+						      | FTS_PHYSICAL
+						      | FTS_NOSTAT, NULL);
+				if (!fts)
+					error(-1, errno,
+					      "Could not open \"%s\" for traversal",
+					      optarg);
+			}
 			break;
 		case 'f':
 			if (parse_long(optarg, &sbi->super_primary))
@@ -355,11 +486,11 @@ int main(int argc, char **argv)
 	}
 
 	device = argv[optind];
-	fd = open(device, O_EXCL | O_RDWR);
-	if (fd < 0)
+	sbi->fd = open(device, O_EXCL | O_RDWR);
+	if (sbi->fd < 0)
 		error(-1, errno, "Error opening %s", device);
 
-	size = lseek(fd, 0L, SEEK_END);
+	size = lseek(sbi->fd, 0L, SEEK_END);
 	/* We need at least 4k to fit everything in */
 	if (!(size >> 12))
 		error(-1, 0, "%s is too small! (only %lu bytes)", device, size);
@@ -418,17 +549,17 @@ int main(int argc, char **argv)
 	sbi->band_sectors = band_sec;
 	sbi->band_count = bands;
 
-	mmap_addr = mmap(NULL, size, PROT_WRITE, MAP_SHARED, fd, 0);
-	if (mmap_addr == MAP_FAILED)
+	sbi->disk = mmap(NULL, size, PROT_WRITE, MAP_SHARED, sbi->fd, 0);
+	if (sbi->disk == MAP_FAILED)
 		error(-1, errno, "Failed to mmap file");
 
-	ret = generate_fs(mmap_addr, sbi, &root);
+	ret = generate_fs(sbi, &root);
 	if (ret)
 		return ret;
 
-	if (basefd != -1) {
-		printf("Writing base data to disk\n");
-		ret = populate_fs(mmap_addr, sbi, root, basefd);
+	if (fts) {
+		printf("Writing initial data to disk\n");
+		ret = populate_fs(sbi, root, fts);
 	}
 	return ret;
 }
