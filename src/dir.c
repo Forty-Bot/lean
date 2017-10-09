@@ -68,7 +68,7 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 			ctx->pos += PAGE_SIZE - off;
 			return PTR_ERR(page);
 		}
-		
+
 		if (lock)
 			lock_page(page);
 		kaddr = page_address(page);
