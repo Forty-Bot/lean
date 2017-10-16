@@ -22,6 +22,14 @@
 #include <uuid/uuid.h>
 
 /*
+ * Error policy:
+ * Everything which happens before we have a complete working filesystem on disk
+ * can just exit with an error code and let the OS do the cleanup. After
+ * generate_fs finishes, try to recover/retry if possible, but always leave a
+ * consistent disk state.
+ */
+
+/*
  * Set the first n bits of a bitmap to 1
  */
 void fill_bitmap(uint8_t *bm, uint64_t n)
@@ -170,11 +178,19 @@ int generate_fs(struct lean_sb_info *sbi,
 uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,
 		       uint32_t *count);
 int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li);
-struct lean_ino_info *create_inode(struct lean_sb_info *sbi,
+struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
 				   struct statx *stat);
 int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
 		  struct lean_ino_info *inode);
 void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *dir);
+
+static inline int put_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
+{
+	int ret = write_inode(sbi, li);
+	
+	free(li);
+	return ret;
+}
 
 /*
  * This function returns the sector which is immediately after the end
@@ -187,7 +203,7 @@ static uint64_t find_next_sector(struct lean_ino_info *li)
 }
 
 uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
-		           uint32_t *count)
+		      uint32_t *count)
 {
 	uint64_t sector;
 
@@ -203,9 +219,11 @@ uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
 		li->extent_sizes[li->extent_count - 1] += *count;
 	} else {
 		/* We need to add another extent */
-		if (li->extent_count >= 6)
-			error(-1, 0,
-			      "Cannot create more than 6 extents");
+		if (li->extent_count >= 6) {
+			fprintf(stderr, "Cannot create more than 6 extents");
+			errno = ERANGE;
+			return 0;
+		}
 		li->extent_starts[li->extent_count] = sector;
 		li->extent_sizes[li->extent_count] = *count;
 		li->extent_count++;
@@ -214,30 +232,53 @@ uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
 	return sector;
 }
 
+/* 
+ * Create a file from an FTSENT. Acts as a wrapper around create_inode_stat.
+ * After calling this you must
+ *	1. Initialize any filetype-specific data
+ *	2. Call write_inode
+ */
+struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f)
+{
+	struct lean_ino_info *li;
+	struct statx stat;
+
+	if (!statx(AT_FDCWD, f->fts_accpath, 0,
+		   STATX_ALL, &stat)) {
+		int errsv = errno;
+		error(0, errno, "Error stat-ing file \"%s\"",
+		      f->fts_path);
+		errno = errsv;
+		return NULL;
+	}
+
+	li = create_inode_stat(sbi, &stat);
+	add_link(sbi, (struct lean_ino_info *)f->fts_pointer, li);
+
+	return li;
+}
+
+/*
+ * Creates a regular file
+ */
 struct lean_ino_info *create_file(struct lean_sb_info *sbi, FTSENT *f)
 {
 	int fd;
 	loff_t off = 0;
 	struct lean_ino_info *li;
-	struct statx stat;
 	uint64_t size;
 
-	if (!statx(AT_FDCWD, f->fts_accpath, 0,
-		   STATX_ALL, &stat))
-		error(-1, errno, "Error stat-ing file \"%s\"",
-		      f->fts_path);
-	size = stat.stx_size;
-
-	li = create_inode(sbi, &stat);
+	li = create_inode_ftsent(sbi, f);
+	if (!li)
+		return li;
+	size = li->size;
 
 	fd = open(f->fts_accpath, O_RDONLY);
-	if (fd == -1)
-		error(-1, errno, "Could not open \"%s\" for reading",
+	if (fd == -1) {
+		error(0, errno, "Could not open \"%s\" for reading",
 		      f->fts_path);
-
-	/* Let the type-specific code in populate_fs handle non-regular files */
-	if (!LIA_ISFMT_REG(li->attr))
-		goto out;
+		goto err;
+	}
 
 	while (size > 0) {
 		ssize_t n = size;
@@ -245,44 +286,66 @@ struct lean_ino_info *create_file(struct lean_sb_info *sbi, FTSENT *f)
 		uint32_t count = (n + LEAN_SEC_MASK) >> LEAN_SEC_SHIFT;
 		uint64_t sector = extend_inode(sbi, li, &count);
 
-		if (!sector)
+		if (!sector) {
 			error(-1, errno, "Could not extend inode of \"%s\"",
 			      f->fts_path);
+			goto err;
+		}
 
 		doff = sector * LEAN_SEC;
 		n = copy_file_range(fd, &off, sbi->fd, &doff,
 				    n < count ? n : count, 0);
-		if (n == -1)
+		if (n == -1) {
 			error(-1, errno, "Error copying data from file \"%s\"",
 				f->fts_path);
+			goto err;
+		}
 
 		size -= n;
 	}
 
-out:
-	/* TODO: check for errors, may be unnecessary */
-	add_link(sbi, (struct lean_ino_info *)f->fts_pointer, li);
-	write_inode(sbi, li);
 	return li;
+
+err:
+	free(li);
+	return NULL;
 }
 
+/*
+ * Initializes a new directory
+ */
 struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
 {
 	FTSENT *child = fts_children(fts, FTS_NAMEONLY);
-	struct lean_ino_info *li = create_file(sbi, f);
+	struct lean_ino_info *li;
 	int64_t size = 0;
 
+	li = create_inode_ftsent(sbi, f);
+	if (!li)
+		return li;
+	
+	/* Original directory size is nonsense */
+	li->size = 0;
+	
+	create_dotfiles(sbi, li);
+	
 	/* Try to allocate all the space for direntries up front */
 	for(; child; child = child->fts_link)
 		size += LEAN_DIR_ENTRY_LEN(child->fts_namelen);
 	while (size > 0) {
 		uint32_t count = (size + LEAN_SEC_MASK) >> LEAN_SEC_SHIFT;
+		uint64_t res;
+		
+		errno = 0;
+		res = extend_inode(sbi, li, &count);
+		if (res == 0 && errno != 0) {
+			free(li);
+			return NULL;
+		}
 
-		extend_inode(sbi, li, &count);
 		size -= count * LEAN_SEC;
 	}
 
-	create_dotfiles(sbi, li);
 	return li;
 }
 
@@ -290,6 +353,7 @@ int populate_fs(struct lean_sb_info *sbi,
 		struct lean_ino_info *root, FTS *fts)
 {
 	FTSENT *f;
+	int attempts = 0;
 
 	/* XXX: fts_read sets errno whenever it returns NULL, unlike readdir! */
 	while ((f = fts_read(fts))) {
@@ -297,29 +361,50 @@ int populate_fs(struct lean_sb_info *sbi,
 			f->fts_pointer = root;
 			continue;
 		}
-
+	
+retry:
 		switch (f->fts_info) {
 		case FTS_NS:
 			/* what? */
 		case FTS_DNR:
-		case FTS_ERR:
-			error(-1, errno,
-			      "Error while populating disk at \"%s\"",
-			      f->fts_path);
+		case FTS_ERR: {
+			/* If we have an individual file error, retry a few
+			 * times then give up and skip it */
+			int errsv = errno;
+			error(0, errno,
+			      "Error while populating disk at \"%s\" (attempt %d)",
+			      f->fts_path, ++attempts);
+			if (errsv == EAGAIN && attempts <= 4) {
+				fts_set(fts, f, FTS_AGAIN);
+				f = fts_read(fts);
+				if (!f)
+					goto out;
+				goto retry;
+			} else {
+				attempts = 0;
+				fts_set(fts, f, FTS_SKIP);
+			}
+		}
 		case FTS_D:
 			f->fts_pointer = create_dir(sbi, fts, f);
+			if (!f->fts_pointer)
+				goto out;
 			break;
 		case FTS_DC:
-			printf("Unsupported loop: \"%s\" is the same directory as \"%s\"",
-			       f->fts_path, f->fts_cycle->fts_path);
+			add_link(sbi, (struct lean_ino_info *)f->fts_pointer,
+				 (struct lean_ino_info *)f->fts_cycle->fts_link);
 			break;
 		case FTS_DP:
-			free(f->fts_pointer);
+			put_inode(sbi, (struct lean_ino_info *)f->fts_pointer);
 			break;
 		case FTS_F:
-		case FTS_NSOK:
-			free(create_file(sbi, f));
+		case FTS_NSOK: {
+			struct lean_ino_info *li = create_file(sbi, f);
+			if (!li)
+				goto out;
+			put_inode(sbi, li);
 			break;
+		}
 		case FTS_SL:
 		case FTS_SLNONE:
 			/* TODO: Implement symbolic links */
@@ -327,12 +412,17 @@ int populate_fs(struct lean_sb_info *sbi,
 			/* what? */
 		case FTS_DEFAULT:
 		default:
-			printf("Unsupported file type for file \"%s\"",
-			       f->fts_path);
+			fprintf(stderr,
+				"Unsupported file type for file \"%s\"", 
+			        f->fts_path);
 		}
+		attempts = 0;
 	}
+
+out:
 	if (errno)
-		error(-1, errno, "Error populating disk");
+		error(-1, errno,
+		      "Error populating disk. Filesystem state undefined");
 
 	return 0;
 }
