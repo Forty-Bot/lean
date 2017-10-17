@@ -1,5 +1,5 @@
-#ifndef MKFS_H
-#define MKFS_H
+#ifndef USER_H
+#define USER_H
 
 #include <errno.h>
 #include <linux/stat.h>
@@ -21,4 +21,4 @@ static inline loff_t copy_file_range(int fd_in, loff_t *off_in, int fd_out,
 		       len, flags);
 }
 
-#endif /* MKFS_H */
+#endif /* USER_H */
