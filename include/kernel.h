@@ -1,5 +1,5 @@
-#ifndef DRIVER_H
-#define DRIVER_H
+#ifndef KERNEL_H
+#define KERNEL_H
 
 #include "lean.h"
 
@@ -124,4 +124,4 @@ void lean_free_sectors(struct super_block *s, uint64_t start, uint32_t count);
 uint64_t lean_new_zeroed_sectors(struct super_block *s, uint64_t goal,
 				 uint32_t *count, int *errp);
 
-#endif /* DRIVER_H */
+#endif /* KERNEL_H */
