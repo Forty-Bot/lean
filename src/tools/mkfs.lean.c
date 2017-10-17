@@ -29,6 +29,84 @@
  * consistent disk state.
  */
 
+/* Note to implementers: use errno to return errors for alloc_sectors and
+ * create_inode. */
+uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,
+		       uint32_t *count);
+int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li);
+struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
+				   struct statx *stat);
+int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
+		  struct lean_ino_info *inode);
+
+/*
+ * This function returns the sector which is immediately after the end
+ * of the last extent in an inode
+ */
+static uint64_t find_next_sector(struct lean_ino_info *li)
+{
+	return li->extent_starts[li->extent_count - 1]
+		+ li->extent_sizes[li->extent_count - 1];
+}
+
+uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
+		      uint32_t *count)
+{
+	uint64_t sector;
+
+	assert(*count <= 1 << 31);
+
+	sector = find_next_sector(li);
+	sector = alloc_sectors(sbi, sector, count);
+	if (errno)
+		return 0;
+
+	if (sector == li->extent_starts[li->extent_count - 1]
+			+ li->extent_sizes[li->extent_count - 1]) {
+		li->extent_sizes[li->extent_count - 1] += *count;
+	} else {
+		/* We need to add another extent */
+		if (li->extent_count >= 6) {
+			fprintf(stderr, "Cannot create more than 6 extents");
+			errno = ERANGE;
+			return 0;
+		}
+		li->extent_starts[li->extent_count] = sector;
+		li->extent_sizes[li->extent_count] = *count;
+		li->extent_count++;
+	}
+
+	return sector;
+}
+
+
+#define LEAN_DOTFILES_SIZE ((uint32_t) 2 * sizeof(struct lean_dir_entry))
+
+/* XXX:Must only be called on freshly-created directories! */
+void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
+		     struct lean_ino_info *dir)
+{
+	uint64_t sector = dir->extent_starts[0];
+	struct lean_inode *inode =
+		(struct lean_inode *)&sbi->disk[sector * LEAN_SEC];
+	struct lean_dir_entry *data = (struct lean_dir_entry *) (&inode[1]);
+	
+	dir->size += LEAN_DOTFILES_SIZE;
+	memset(data, 0, LEAN_DOTFILES_SIZE);
+
+	data[0].inode = htole64(sector);
+	data[0].type = LFT_DIR;
+	data[0].entry_length = 1;
+	data[0].name_length = htole16(1);
+	data[0].name[0] = '.';
+	data[1].inode = htole64(parent->extent_starts[0]);
+	data[1].type = LFT_DIR;
+	data[1].entry_length = 1;
+	data[1].name_length = htole16(2);
+	data[1].name[0] = '.';
+	data[1].name[1] = '.';
+}
+
 /*
  * Set the first n bits of a bitmap to 1
  */
@@ -142,7 +220,7 @@ int generate_fs(struct lean_sb_info *sbi,
 	root->gid = getgid();
 	root->attr = LIA_RUSR | LIA_WUSR | LIA_XUSR |
 		     LIA_PREALLOC | LIA_FMT_DIR;
-	root->size = data_size;
+	root->size = 0;
 	root->sector_count = sbi->prealloc;
 	clock_gettime(CLOCK_REALTIME, &ts);
 	time = lean_time(ts);
@@ -153,17 +231,7 @@ int generate_fs(struct lean_sb_info *sbi,
 	root->extent_starts[0] = sbi->root;
 	root->extent_sizes[0] = sbi->prealloc;
 
-	data[0].inode = htole64(sbi->root);
-	data[0].type = LFT_DIR;
-	data[0].entry_length = 1;
-	data[0].name_length = htole16(1);
-	data[0].name[0] = '.';
-	data[1].inode = htole64(sbi->root);
-	data[1].type = LFT_DIR;
-	data[1].entry_length = 1;
-	data[1].name_length = htole16(2);
-	data[1].name[0] = '.';
-	data[1].name[1] = '.';
+	create_dotfiles(sbi, root, root);
 
 	lean_info_to_inode(root, root_ino);
 
@@ -173,16 +241,17 @@ int generate_fs(struct lean_sb_info *sbi,
 	return 0;
 }
 
-/* Note to implementers: use errno to return errors for alloc_sectors and
- * create_inode. Or just crash :P */
-uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,
-		       uint32_t *count);
-int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li);
-struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
-				   struct statx *stat);
-int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
-		  struct lean_ino_info *inode);
-void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *dir);
+
+int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
+{
+	uint64_t sector = li->extent_starts[0];
+	struct lean_inode *inode =
+		(struct lean_inode *)&sbi->disk[sector * LEAN_SEC];
+	lean_info_to_inode(li, inode);
+
+	/* We may need this later, but for now writes always succeed */
+	return 0;
+}
 
 static inline int put_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
 {
@@ -190,46 +259,6 @@ static inline int put_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
 	
 	free(li);
 	return ret;
-}
-
-/*
- * This function returns the sector which is immediately after the end
- * of the last extent in an inode
- */
-static uint64_t find_next_sector(struct lean_ino_info *li)
-{
-	return li->extent_starts[li->extent_count - 1]
-		+ li->extent_sizes[li->extent_count - 1];
-}
-
-uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
-		      uint32_t *count)
-{
-	uint64_t sector;
-
-	assert(*count <= 1 << 31);
-
-	sector = find_next_sector(li);
-	sector = alloc_sectors(sbi, sector, count);
-	if (errno)
-		return 0;
-
-	if (sector == li->extent_starts[li->extent_count - 1]
-			+ li->extent_sizes[li->extent_count - 1]) {
-		li->extent_sizes[li->extent_count - 1] += *count;
-	} else {
-		/* We need to add another extent */
-		if (li->extent_count >= 6) {
-			fprintf(stderr, "Cannot create more than 6 extents");
-			errno = ERANGE;
-			return 0;
-		}
-		li->extent_starts[li->extent_count] = sector;
-		li->extent_sizes[li->extent_count] = *count;
-		li->extent_count++;
-	}
-
-	return sector;
 }
 
 /* 
@@ -326,8 +355,7 @@ struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
 	
 	/* Original directory size is nonsense */
 	li->size = 0;
-	
-	create_dotfiles(sbi, li);
+	create_dotfiles(sbi, (struct lean_ino_info *)f->fts_pointer, li);
 	
 	/* Try to allocate all the space for direntries up front */
 	for(; child; child = child->fts_link)
