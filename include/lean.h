@@ -273,6 +273,8 @@ struct lean_dir_entry {
 					LEAN_DIR_ROUND) & ~LEAN_DIR_ROUND) / \
 				      sizeof(struct lean_dir_entry))
 
+#define LEAN_DOTFILES_SIZE ((uint32_t) 2 * sizeof(struct lean_dir_entry))
+
 /* Time helper functions */
 static inline uint64_t lean_time(struct timespec ts)
 {
