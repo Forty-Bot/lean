@@ -79,25 +79,6 @@ void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
 	data[1].name[1] = '.';
 }
 
-int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
-{
-	uint64_t sector = li->extent_starts[0];
-	struct lean_inode *inode =
-		(struct lean_inode *)&sbi->disk[sector * LEAN_SEC];
-	lean_info_to_inode(li, inode);
-
-	/* We may need this later, but for now writes always succeed */
-	return 0;
-}
-
-static inline int put_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
-{
-	int ret = write_inode(sbi, li);
-	
-	free(li);
-	return ret;
-}
-
 /* 
  * Create a file from an FTSENT. Acts as a wrapper around create_inode_stat.
  * After calling this you must

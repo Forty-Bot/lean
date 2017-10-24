@@ -33,15 +33,21 @@ struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
 int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
 		  struct lean_ino_info *inode);
 
-static uint64_t find_next_sector(struct lean_ino_info *li);
 uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
 		      uint32_t *count);
 void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
 		     struct lean_ino_info *dir);
 int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li);
-static inline int put_inode(struct lean_sb_info *sbi, struct lean_ino_info *li);
 struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f);
 struct lean_ino_info *create_file(struct lean_sb_info *sbi, FTSENT *f);
 struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f);
+
+static inline int put_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
+{
+	int ret = write_inode(sbi, li);
+	
+	free(li);
+	return ret;
+}
 
 #endif /* USER_H */
