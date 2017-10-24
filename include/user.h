@@ -20,9 +20,13 @@ static inline loff_t copy_file_range(int fd_in, loff_t *off_in, int fd_out,
 				     loff_t *off_out, size_t len,
 				     unsigned int flags)
 {
-	return syscall(__NR_copy_file_range, fd_in, off_in, fd_out, off_out,
+	return syscall(SYS_copy_file_range, fd_in, off_in, fd_out, off_out,
 		       len, flags);
 }
+
+/* XXX: Different (but similar) meaning than in kernel.h */
+#define LEAN_I(sbi, inode) ((struct lean_inode *) \
+		           &sbi->disk[inode->extent_starts[0] * LEAN_SEC])
 
 /* Note to implementers: use errno to return errors */
 uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,

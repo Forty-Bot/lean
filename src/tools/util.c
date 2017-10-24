@@ -52,21 +52,17 @@ uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
 	return sector;
 }
 
-
-
 /* XXX:Must only be called on freshly-created directories! */
 void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
 		     struct lean_ino_info *dir)
 {
-	uint64_t sector = dir->extent_starts[0];
-	struct lean_inode *inode =
-		(struct lean_inode *)&sbi->disk[sector * LEAN_SEC];
+	struct lean_inode *inode = LEAN_I(sbi, dir);	
 	struct lean_dir_entry *data = (struct lean_dir_entry *) (&inode[1]);
 	
 	dir->size += LEAN_DOTFILES_SIZE;
 	memset(data, 0, LEAN_DOTFILES_SIZE);
 
-	data[0].inode = htole64(sector);
+	data[0].inode = htole64(dir->extent_starts[0]);
 	data[0].type = LFT_DIR;
 	data[0].entry_length = 1;
 	data[0].name_length = htole16(1);
@@ -193,4 +189,12 @@ struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
 	}
 
 	return li;
+}
+
+int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
+{
+	struct lean_inode *inode = LEAN_I(sbi, li);
+	
+	memcpy(inode, li, sizeof(*inode));
+	return 0;
 }
