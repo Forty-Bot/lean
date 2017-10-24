@@ -8,12 +8,12 @@ ccflags-y += ${MY_CFLAGS}
 CC += ${MY_CFLAGS}
 
 default:
-	make -C $(BUILD_PATH) M=$$PWD modules
+	$(MAKE) -C $(BUILD_PATH) M=$$PWD modules
 
 .PHONY: clean
 clean:
-	make -C $(BUILD_PATH) M=$$PWD clean
+	$(MAKE) -C $(BUILD_PATH) M=$$PWD clean
 
 .PHONY: install
 install:
-	make -C $(BUILD_PATH) M=$$PWD modules_install
+	$(MAKE) -C $(BUILD_PATH) M=$$PWD modules_install
