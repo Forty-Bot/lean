@@ -205,9 +205,10 @@ retry:
 				goto out;
 			break;
 		case FTS_DC:
-			add_link(sbi, (struct lean_ino_info *)f->fts_pointer,
-				 (struct lean_ino_info *)f->fts_cycle->fts_link,
-				 f->fts_name, f->fts_namelen);
+			if (add_link(sbi, (struct lean_ino_info *)f->fts_pointer,
+				     (struct lean_ino_info *)f->fts_cycle->fts_link,
+				     f->fts_name, f->fts_namelen))
+				goto out;
 			break;
 		case FTS_DP:
 			put_inode(sbi, (struct lean_ino_info *)f->fts_pointer);

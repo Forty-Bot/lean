@@ -80,7 +80,7 @@ void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
  * Create a file from an FTSENT. Acts as a wrapper around create_inode_stat.
  * After calling this you must
  *	1. Initialize any filetype-specific data
- *	2. Call write_inode
+ *	2. Call write_inode (or put_inode)
  */
 struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f)
 {
@@ -97,8 +97,9 @@ struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f)
 	}
 
 	li = create_inode_stat(sbi, &stat);
-	add_link(sbi, (struct lean_ino_info *)f->fts_pointer, li,
-		 f->fts_name, f->fts_namelen);
+	if (add_link(sbi, (struct lean_ino_info *)f->fts_pointer, li,
+		     f->fts_name, f->fts_namelen))
+		return NULL;
 
 	return li;
 }
@@ -204,7 +205,7 @@ struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
 
 		errno = 0;
 		res = extend_inode(sbi, li, &count);
-		if (res == 0 && errno != 0) {
+		if (res == 0) {
 			free(li);
 			return NULL;
 		}
@@ -220,5 +221,38 @@ int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
 	struct lean_inode *inode = LEAN_I(sbi, li);
 
 	memcpy(inode, li, sizeof(*inode));
+	return 0;
+}
+
+/* TODO: Search for empty dentries instead of just appending */
+int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
+	     struct lean_ino_info *inode, uint8_t *name, uint8_t name_length)
+{
+	struct lean_dir_entry *de;
+	uint8_t entry_length = LEAN_DIR_ENTRY_LEN(name_length);
+	uint64_t sector = dir->extent_starts[dir->extent_count - 1]
+			  + dir->extent_sizes[dir->extent_count - 1] - 1;
+	unsigned int off = (sector == dir->extent_starts[0])
+			   ? sizeof(struct lean_inode) + dir->size
+			   : dir->size & LEAN_SEC_MASK;
+
+	if (entry_length > LEAN_SEC - off) {
+		uint32_t count = 0;
+
+		sector = extend_inode(sbi, dir, &count);
+		if (sector == 0)
+			return -1;
+		off = 0;
+	}
+
+	de = (struct lean_dir_entry *)&sbi->disk[sector * LEAN_SEC + off];
+	de->inode = htole64(inode->extent_starts[0]);
+	de->type = (inode->attr & LIA_FMT_MASK) >> LIA_FMT_SHIFT;
+	de->entry_length = entry_length;
+	de->name_length = htole16(name_length);
+	memcpy(de->name, name, name_length);
+
+	dir->size += entry_length;
+
 	return 0;
 }
