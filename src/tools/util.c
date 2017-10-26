@@ -56,9 +56,9 @@ uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
 void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
 		     struct lean_ino_info *dir)
 {
-	struct lean_inode *inode = LEAN_I(sbi, dir);	
+	struct lean_inode *inode = LEAN_I(sbi, dir);
 	struct lean_dir_entry *data = (struct lean_dir_entry *) (&inode[1]);
-	
+
 	dir->size += LEAN_DOTFILES_SIZE;
 	memset(data, 0, LEAN_DOTFILES_SIZE);
 
@@ -75,7 +75,7 @@ void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
 	data[1].name[1] = '.';
 }
 
-/* 
+/*
  * Create a file from an FTSENT. Acts as a wrapper around create_inode_stat.
  * After calling this you must
  *	1. Initialize any filetype-specific data
@@ -124,28 +124,36 @@ struct lean_ino_info *create_file(struct lean_sb_info *sbi, FTSENT *f)
 		goto err;
 	}
 
+	/* The outer loop allocates sectors which the inner loop copies data
+	 * into
+	 */
 	while (size > 0) {
-		ssize_t n = size;
 		loff_t doff;
-		uint32_t count = (n + LEAN_SEC_MASK) >> LEAN_SEC_SHIFT;
+		uint32_t count = (size + LEAN_SEC_MASK) >> LEAN_SEC_SHIFT;
 		uint64_t sector = extend_inode(sbi, li, &count);
+		uint64_t copy_size = min(count << LEAN_SEC_SHIFT, size);
 
 		if (!sector) {
-			error(-1, errno, "Could not extend inode of \"%s\"",
+			error(0, errno, "Could not extend inode of \"%s\"",
 			      f->fts_path);
 			goto err;
 		}
 
 		doff = sector * LEAN_SEC;
-		n = copy_file_range(fd, &off, sbi->fd, &doff,
-				    n < count ? n : count, 0);
-		if (n == -1) {
-			error(-1, errno, "Error copying data from file \"%s\"",
-				f->fts_path);
-			goto err;
-		}
+		while (copy_size > 0) {
+			ssize_t n = copy_file_range(fd, &off, sbi->fd, &doff,
+					    copy_size, 0);
 
-		size -= n;
+			if (n == -1) {
+				error(0, errno,
+				      "Error copying data from file \"%s\"",
+				      f->fts_path);
+				goto err;
+			}
+
+			size -= n;
+			copy_size -= n;
+		}
 	}
 
 	return li;
@@ -167,18 +175,18 @@ struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
 	li = create_inode_ftsent(sbi, f);
 	if (!li)
 		return li;
-	
+
 	/* Original directory size is nonsense */
 	li->size = 0;
 	create_dotfiles(sbi, (struct lean_ino_info *)f->fts_pointer, li);
-	
+
 	/* Try to allocate all the space for direntries up front */
 	for(; child; child = child->fts_link)
 		size += LEAN_DIR_ENTRY_LEN(child->fts_namelen);
 	while (size > 0) {
 		uint32_t count = (size + LEAN_SEC_MASK) >> LEAN_SEC_SHIFT;
 		uint64_t res;
-		
+
 		errno = 0;
 		res = extend_inode(sbi, li, &count);
 		if (res == 0 && errno != 0) {
@@ -195,7 +203,7 @@ struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
 int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
 {
 	struct lean_inode *inode = LEAN_I(sbi, li);
-	
+
 	memcpy(inode, li, sizeof(*inode));
 	return 0;
 }
