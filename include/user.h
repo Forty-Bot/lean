@@ -24,6 +24,20 @@ static inline loff_t copy_file_range(int fd_in, loff_t *off_in, int fd_out,
 		       len, flags);
 }
 
+#define max(a,b) \
+__extension__ ({ \
+	 __typeof__(a) _a = (a); \
+	 __typeof__(b) _b = (b); \
+	 _a > _b ? _a : _b; \
+})
+
+#define min(a,b) \
+__extension__ ({ \
+	 __typeof__(a) _a = (a); \
+	 __typeof__(b) _b = (b); \
+	 _a < _b ? _a : _b; \
+})
+
 /* XXX: Different (but similar) meaning than in kernel.h */
 #define LEAN_I(sbi, inode) ((struct lean_inode *) \
 		           &sbi->disk[inode->extent_starts[0] * LEAN_SEC])

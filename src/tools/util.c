@@ -5,6 +5,7 @@
 #include <error.h>
 #include <fcntl.h>
 #include <fts.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -107,6 +108,7 @@ struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f)
  */
 struct lean_ino_info *create_file(struct lean_sb_info *sbi, FTSENT *f)
 {
+	bool first = true;
 	int fd;
 	loff_t off = 0;
 	struct lean_ino_info *li;
@@ -129,17 +131,30 @@ struct lean_ino_info *create_file(struct lean_sb_info *sbi, FTSENT *f)
 	 */
 	while (size > 0) {
 		loff_t doff;
-		uint32_t count = (size + LEAN_SEC_MASK) >> LEAN_SEC_SHIFT;
-		uint64_t sector = extend_inode(sbi, li, &count);
-		uint64_t copy_size = min(count << LEAN_SEC_SHIFT, size);
+		uint64_t sector;
+		uint64_t copy_size;
 
-		if (!sector) {
-			error(0, errno, "Could not extend inode of \"%s\"",
-			      f->fts_path);
-			goto err;
+		if (!first) {
+			uint32_t count =
+				(size + LEAN_SEC_MASK) >> LEAN_SEC_SHIFT;
+
+			sector = extend_inode(sbi, li, &count);
+			if (!sector) {
+				error(0, errno,
+				      "Could not extend inode of \"%s\"",
+				      f->fts_path);
+				goto err;
+			}
+			copy_size = min(count << LEAN_SEC_SHIFT, size);
+			doff = sector * LEAN_SEC;
+		} else {
+			first = false;
+			sector = li->extent_starts[0];
+			copy_size = min(LEAN_SEC - sizeof(struct lean_inode),
+					size);
+			doff = sector * LEAN_SEC + sizeof(struct lean_inode);
 		}
 
-		doff = sector * LEAN_SEC;
 		while (copy_size > 0) {
 			ssize_t n = copy_file_range(fd, &off, sbi->fd, &doff,
 					    copy_size, 0);
