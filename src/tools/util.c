@@ -96,7 +96,8 @@ struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f)
 	}
 
 	li = create_inode_stat(sbi, &stat);
-	add_link(sbi, (struct lean_ino_info *)f->fts_pointer, li);
+	add_link(sbi, (struct lean_ino_info *)f->fts_pointer, li,
+		 f->fts_name, f->fts_namelen);
 
 	return li;
 }

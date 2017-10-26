@@ -31,11 +31,10 @@ static inline loff_t copy_file_range(int fd_in, loff_t *off_in, int fd_out,
 /* Note to implementers: use errno to return errors */
 uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,
 		       uint32_t *count);
-int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li);
 struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
 				   struct statx *stat);
 int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
-		  struct lean_ino_info *inode);
+	     struct lean_ino_info *inode, uint8_t *name, uint8_t namelen);
 
 uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
 		      uint32_t *count);
