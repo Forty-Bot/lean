@@ -94,8 +94,8 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 					 inode->i_ino);
 				ret = -EIO;
 				break;
-			} else if (!emit_empty
-				   && unlikely(length > de->entry_length
+			} else if (!emit_empty &&
+				   unlikely(length > de->entry_length
 				   * sizeof(struct lean_dir_entry) - 12)) {
 				lean_msg(s, KERN_ERR,
 					 "directory name longer than directory entry in inode %lu",
@@ -247,6 +247,7 @@ static int lean_add_link_iter(struct dir_context *ctx, char *name,
 	 * have extra space following our new entry.
 	 */
 		struct lean_dir_entry *end = start + data->entry_length;
+
 		memset(end, 0, sizeof(*end));
 		end->type = LFT_NONE;
 		end->entry_length = size - data->entry_length;
@@ -264,24 +265,24 @@ static int lean_add_link_iter(struct dir_context *ctx, char *name,
 	length = off - (de->entry_length * sizeof(struct lean_dir_entry));
 	/* Check to see if we went over the end of the directory */
 	if (length > dir->i_size) {
-                i_size_write(dir, length);
-                mark_inode_dirty(dir);
-        }
+		i_size_write(dir, length);
+		mark_inode_dirty(dir);
+	}
 
 	dir->i_mtime = dir->i_ctime = current_time(dir);
-        mark_inode_dirty(dir);
+	mark_inode_dirty(dir);
 
 	set_page_dirty(page);
 	data->err = 0;
 	if (IS_DIRSYNC(dir)) {
-                data->err = lean_write_page(page, 1);
-                if (!data->err)
-                        data->err = sync_inode_metadata(dir, 1);
+		data->err = lean_write_page(page, 1);
+		if (!data->err)
+			data->err = sync_inode_metadata(dir, 1);
 		else
 			unlock_page(page);
-        } else {
-                unlock_page(page);
-        }
+	} else {
+		unlock_page(page);
+	}
 
 	return 1;
 }
@@ -335,14 +336,18 @@ static int lean_add_link(struct dentry *de, struct inode *inode)
 		err = lean_add_link_iter(&data.ctx, new->name, 0,
 					 off, inode->i_ino, DT_UNKNOWN);
 		if (!err || data.err) {
-			lean_msg(inode->i_sb, KERN_DEBUG, "failed to extend directory err = %d data.err = %d", err, data.err);
+			lean_msg(inode->i_sb, KERN_DEBUG,
+				 "failed to extend directory err = %d data.err = %d",
+				 err, data.err);
 			unlock_page(page);
 			lean_put_page(page);
 			if (!err)
 				return -EINVAL;
-		} else
+		} else {
 			lean_put_page(page);
-		lean_msg(inode->i_sb, KERN_DEBUG, "created dir_entry... %16ph", new);
+		}
+		lean_msg(inode->i_sb, KERN_DEBUG,
+			 "created dir_entry... %16ph", new);
 	}
 
 	return data.err;

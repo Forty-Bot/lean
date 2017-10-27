@@ -27,10 +27,11 @@ static uint64_t lean_find_sector(struct lean_ino_info *li,
 		sec -= size;
 		i++;
 	}
-	
+
 	if (sec <= size) {
 		/* Try to map as many sectors as we can */
-		for (i = 1; i < *count && sec + i < size; i++);
+		for (i = 1; i < *count && sec + i < size; i++)
+			;
 		*count = i;
 	} else {
 		return 0;
@@ -65,8 +66,8 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 
 		up_read(&li->alloc_lock);
 		down_write(&li->alloc_lock);
-		
-		/* 
+
+		/*
 		 * Try again in case someone else has already allocated new
 		 * sectors while we were waiting for the write lock
 		 */
@@ -387,7 +388,7 @@ static uint64_t lean_find_goal_dir(struct inode *parent)
 	struct super_block *s = parent->i_sb;
 	struct lean_sb_info *sbi = (struct lean_sb_info *)s->s_fs_info;
 	uint32_t free, i;
-	uint32_t mean_free = lean_count_free_sectors(s) / sbi->band_count;  
+	uint32_t mean_free = lean_count_free_sectors(s) / sbi->band_count;
 	uint64_t goal, band;
 
 	if (parent == d_inode(s->s_root))
@@ -400,7 +401,7 @@ static uint64_t lean_find_goal_dir(struct inode *parent)
 	for (i = 0; i < sbi->band_count; i++) {
 		if (++band > sbi->band_count)
 			band -= sbi->band_count;
-		
+
 		bitmap = lean_bitmap_get(s, band);
 		if (IS_ERR(bitmap))
 			continue;
@@ -411,7 +412,9 @@ static uint64_t lean_find_goal_dir(struct inode *parent)
 			return band << sbi->log2_band_sectors;
 	}
 
-	/* Couldn't find any better-than-average sectors, just return the goal */
+	/* Couldn't find any better-than-average sectors,
+	 * just return the goal
+	 */
 	return goal;
 }
 
@@ -428,12 +431,11 @@ static uint64_t lean_find_goal_other(struct inode *parent)
 	bitmap = lean_bitmap_get(s, band);
 	if (IS_ERR(bitmap))
 		return parent->i_ino;
-	
+
 	free = lean_bitmap_getfree(bitmap);
 	lean_bitmap_put(bitmap);
-	if (free) {
+	if (free)
 		return parent->i_ino;
-	}
 
 	/*
 	 * Try a quadratic search starting at a sector determined by the parent
@@ -486,7 +488,7 @@ struct inode *lean_new_inode(struct inode *dir, umode_t mode)
 	sec = lean_new_zeroed_sectors(s, goal, &count, &err);
 	if (err)
 		goto fail;
-	
+
 	inode_init_owner(inode, dir, mode);
 	inode->i_ino = sec;
 	inode->i_size = 0;

@@ -8,7 +8,7 @@
 #include <linux/pagemap.h>
 #include <linux/slab.h>
 
-/* 
+/*
  * The LEAN filesystem stores block allocation data as a bitmap which is divided
  * spatially on disk into groups of sectors called "bands." This structure is
  * defined on-disk by the fields log2_band_sectors and bitmap_start in the
@@ -17,14 +17,14 @@
  * in the same directory in the same band (and sectors for inodes from different
  * directories in different bands). Because of this (and also to reflect the
  * physical grouping of bitmap sectors), the bitmap is accessed through the
- * lean_bitmap structure. 
+ * lean_bitmap structure.
  *
  * The lean_bitmap structure is used to keep track of the pages mapped to the
  * blocks which make up the band bitmap it represents. All lean_bitmaps are
  * allocated at mount time and stored as an array pointed to by
  * sbi.bitmap_cache. They are accessed with lean_bitmap_get and lean_bitmap_put,
  * which ensure the structures are initialized and the pages are
- * reference-counted. Data modification (but not access) is protected by the 
+ * reference-counted. Data modification (but not access) is protected by the
  * `lock` field. As iterating over a lean_bitmap is a bit of a hairy process,
  * the preferred method is to call lean_bitmap_iterate with a suitable callback.
  * If it is necessary to modify the bitmap data during this loop, pass the
@@ -116,7 +116,7 @@ struct lean_bitmap *lean_bitmap_get(struct super_block *s, uint64_t band)
 		if (!page || IS_ERR(page))
 			goto free_pages;
 
-		BUG_ON(bitmap->pages[i] && bitmap->pages[i] != page);
+		WARN_ON(bitmap->pages[i] && bitmap->pages[i] != page);
 		bitmap->pages[i] = page;
 	}
 	return bitmap;
@@ -136,8 +136,8 @@ free_pages:
  * TODO: Add support for starting at any page
  */
 static int _lean_bitmap_iterate(struct lean_bitmap *bitmap,
-			       int (*func)(char *, uint32_t, int, void *),
-			       void *priv, bool atomic)
+				int (*func)(char *, uint32_t, int, void *),
+				void *priv, bool atomic)
 {
 	int i, ret;
 	char *addr;
@@ -228,7 +228,7 @@ int lean_bitmap_cache_init(struct super_block *s)
 	 * Each lean_bitmap has an array of pages on the end
 	 */
 	sbi->bitmap_cache = kcalloc(sbi->band_count, LEAN_BITMAP_SIZE(sbi),
-		GFP_KERNEL);
+				    GFP_KERNEL);
 	if (!sbi->bitmap_cache)
 		return -ENOMEM;
 
@@ -247,7 +247,9 @@ int lean_bitmap_cache_init(struct super_block *s)
 	sbi->bitmap = new_inode(s);
 	if (!sbi->bitmap)
 		goto error;
-	/* Use the superblock as this inode's ino; we need one as a hash value */
+	/* Use the superblock as this inode's ino
+	 * We need one as a hash value
+	 */
 	sbi->bitmap->i_ino = sbi->super_primary;
 	sbi->bitmap->i_flags = S_PRIVATE;
 	set_nlink(sbi->bitmap, 1);
@@ -284,6 +286,7 @@ uint64_t lean_count_free_sectors(struct super_block *s)
 #ifdef LEAN_TESTING
 	for (i = 0; i < sbi->band_count; i++) {
 		struct lean_bitmap *bitmap = lean_bitmap_get(s, i);
+
 		if (IS_ERR(bitmap)) {
 			lean_msg(s, KERN_WARNING,
 				 "could not read band %d bitmap", i);
@@ -380,7 +383,7 @@ found:
 	lock_page(page);
 	/* XXX: set_page_dirty returns whether the page is newly dirty */
 	set_page_dirty(page);
-	
+
 	retries = 0;
 	do {
 		if (retries)
@@ -388,7 +391,7 @@ found:
 		data->err = lean_write_page(page, data->sync);
 		retries++;
 	} while (data->err == -EAGAIN && retries <= 4);
-	
+
 	if (data->err) {
 		pr_warn("could not write bitmap page");
 		pr_info("i = %d tmp = %d addr = %p", i, tmp, addr);
@@ -397,7 +400,7 @@ found:
 							    tmp + i - 1, addr));
 		unlock_page(page);
 	}
-	
+
 	return i;
 }
 
@@ -429,9 +432,9 @@ static uint32_t lean_try_alloc(struct super_block *s,
 					- goal_page_nr * PAGE_SIZE
 					- (goal >> 3),
 				    goal_page_nr, &priv);
-	if (priv.err)
+	if (priv.err) {
 		goto err;
-	else if (found) {
+	} else if (found) {
 		goal = priv.sector + (goal & ~7);
 		goto out;
 	}
@@ -439,9 +442,9 @@ static uint32_t lean_try_alloc(struct super_block *s,
 	/* Search the whole band */
 	priv.off = 0;
 	found = lean_bitmap_iterate(bitmap, lean_try_alloc_iter, &priv);
-	if (priv.err)
+	if (priv.err) {
 		goto err;
-	else if (found) {
+	} else if (found) {
 		goal = priv.sector;
 		goto out;
 	}
@@ -556,7 +559,7 @@ uint64_t lean_new_zeroed_sectors(struct super_block *s, uint64_t goal,
 				 uint32_t *count, int *errp)
 {
 	uint64_t sector = lean_new_sectors(s, goal, count, errp);
-	
+
 	if (*errp) {
 		lean_msg(s, KERN_INFO, "failed to allocate sectors");
 		return 0;
@@ -627,7 +630,8 @@ void lean_free_sectors(struct super_block *s, uint64_t start, uint32_t count)
 			 "attempted to free %u blocks at sector %llu, outside the data zone",
 			 count, start);
 		return;
-	} else if (start_band < sbi->bitmap_size || start_band + count > sbi->band_sectors) {
+	} else if (start_band < sbi->bitmap_size ||
+		   start_band + count > sbi->band_sectors) {
 		lean_msg(s, KERN_ERR,
 			 "attempted to free %u blocks at sector %llu, part of the block bitmap",
 			 count, start);

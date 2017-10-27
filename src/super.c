@@ -39,7 +39,7 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 	uint64_t fsid;
 
 	buf->f_type = (uint32_t)(*LEAN_MAGIC_SUPERBLOCK);
-	buf->f_bsize = buf->f_frsize = 512;
+	buf->f_bsize = buf->f_frsize = LEAN_SEC;
 	buf->f_blocks = sbi->sectors_total;
 	buf->f_bfree = buf->f_bavail = lean_count_free_sectors(s);
 	/* We don't have hard inode limits, so don't bother */

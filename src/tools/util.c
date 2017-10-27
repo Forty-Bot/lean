@@ -58,7 +58,7 @@ void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
 		     struct lean_ino_info *dir)
 {
 	struct lean_inode *inode = LEAN_I(sbi, dir);
-	struct lean_dir_entry *data = (struct lean_dir_entry *) (&inode[1]);
+	struct lean_dir_entry *data = (struct lean_dir_entry *)(&inode[1]);
 
 	dir->size += LEAN_DOTFILES_SIZE;
 	memset(data, 0, LEAN_DOTFILES_SIZE);
@@ -90,6 +90,7 @@ struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f)
 	if (!statx(AT_FDCWD, f->fts_accpath, 0,
 		   STATX_ALL, &stat)) {
 		int errsv = errno;
+
 		error(0, errno, "Error stat-ing file \"%s\"",
 		      f->fts_path);
 		errno = errsv;
@@ -197,7 +198,7 @@ struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
 	create_dotfiles(sbi, (struct lean_ino_info *)f->fts_pointer, li);
 
 	/* Try to allocate all the space for direntries up front */
-	for(; child; child = child->fts_link)
+	for (; child; child = child->fts_link)
 		size += LEAN_DIR_ENTRY_LEN(child->fts_namelen);
 	while (size > 0) {
 		uint32_t count = (size + LEAN_SEC_MASK) >> LEAN_SEC_SHIFT;

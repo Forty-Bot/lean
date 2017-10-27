@@ -233,7 +233,8 @@ enum lean_inode_attr {
 	LIA_NOATIME = 1 << 16, /* Do not update access time */
 	LIA_IMMUTABLE = 1 << 17, /* Do not move file sectors */
 	LIA_PREALLOC = 1 << 18, /* Keep preallocated sectors beyond inode.size
-				   after file is closed */
+				 * after file is closed
+				 */
 	LIA_INLINE = 1 << 19, /* Inline extended attributes in first sector */
 	/* Filetype attributes */
 	LIA_FMT_REG = LFT_REG << LIA_FMT_SHIFT, /* Regular file */
@@ -268,12 +269,12 @@ struct lean_dir_entry {
 #endif
 
 #define LEAN_DIR_ROUND (sizeof(struct lean_dir_entry) - 1)
-#define LEAN_DIR_ENTRY_LEN(name_len) ((((name_len) + \
-					offsetof(struct lean_dir_entry, name) + \
-					LEAN_DIR_ROUND) & ~LEAN_DIR_ROUND) / \
+#define LEAN_DIR_ENTRY_LEN(name_len) ((((name_len) \
+					+ offsetof(struct lean_dir_entry, name) \
+					+ LEAN_DIR_ROUND) & ~LEAN_DIR_ROUND) / \
 				      sizeof(struct lean_dir_entry))
 
-#define LEAN_DOTFILES_SIZE ((uint32_t) 2 * sizeof(struct lean_dir_entry))
+#define LEAN_DOTFILES_SIZE ((uint32_t)2 * sizeof(struct lean_dir_entry))
 
 /* Time helper functions */
 static inline uint64_t lean_time(struct timespec ts)

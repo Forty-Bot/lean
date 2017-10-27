@@ -29,7 +29,7 @@ static inline struct lean_ino_info *LEAN_I(struct inode *inode)
 static inline enum lean_file_type LEAN_FT(umode_t mode)
 {
 	mode &= S_IFMT;
-	switch(mode) {
+	switch (mode) {
 	case S_IFREG:
 		return LFT_REG;
 	case S_IFDIR:

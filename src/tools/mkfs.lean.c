@@ -68,7 +68,7 @@ uint64_t generate_bm(struct lean_sb_info *sbi)
 
 	band_sec = 1 << sbi->log2_band_sectors;
 	band_bm_sec = band_sec >> 12;
-	bands = 1 + (sbi->sectors_total - 1)/band_sec;
+	bands = 1 + (sbi->sectors_total - 1) / band_sec;
 
 	bm_size = band_sec / 8;
 	bm = malloc(bm_size);
@@ -85,7 +85,8 @@ uint64_t generate_bm(struct lean_sb_info *sbi)
 	zero_sec = sbi->root + sbi->prealloc;
 	fill_bitmap(bm, zero_sec);
 	/* [initial sectors (including band 0's bitmap)] + [superblock backup],
-	 * [each band's bitmap - band 0's bitmap] */
+	 * [each band's bitmap - band 0's bitmap]
+	 */
 	sbi->sectors_free = sbi->sectors_total -
 			   (zero_sec + 1 + (bands - 1) * band_bm_sec);
 	sbi->super_backup = ((sbi->sectors_total < band_sec) ?
@@ -128,12 +129,12 @@ int generate_fs(struct lean_sb_info *sbi,
 		error(-1, 0, "Could not write bitmap to disk");
 
 	data_size = 2 * sizeof(*data);
-	root_ino = (struct lean_inode *) &sbi->disk[sbi->root * LEAN_SEC];
+	root_ino = (struct lean_inode *)&sbi->disk[sbi->root * LEAN_SEC];
 	root = malloc(sizeof(*root));
 	if (!root)
 		error(-1, errno, "Could not allocate memory for root inode");
 	*rootp = root;
-	data = (struct lean_dir_entry *) (&root_ino[1]);
+	data = (struct lean_dir_entry *)(&root_ino[1]);
 	memset(root_ino, 0, sizeof(*root_ino) + data_size);
 
 	root->extent_count = 1;
@@ -175,7 +176,7 @@ int populate_fs(struct lean_sb_info *sbi,
 			f->fts_pointer = root;
 			continue;
 		}
-	
+
 retry:
 		switch (f->fts_info) {
 		case FTS_NS:
@@ -183,8 +184,10 @@ retry:
 		case FTS_DNR:
 		case FTS_ERR: {
 			/* If we have an individual file error, retry a few
-			 * times then give up and skip it */
+			 * times then give up and skip it
+			 */
 			int errsv = errno;
+
 			error(0, errno,
 			      "Error while populating disk at \"%s\" (attempt %d)",
 			      f->fts_path, ++attempts);
@@ -205,7 +208,8 @@ retry:
 				goto out;
 			break;
 		case FTS_DC:
-			if (add_link(sbi, (struct lean_ino_info *)f->fts_pointer,
+			if (add_link(sbi,
+				     (struct lean_ino_info *)f->fts_pointer,
 				     (struct lean_ino_info *)f->fts_cycle->fts_link,
 				     f->fts_name, f->fts_namelen))
 				goto out;
@@ -216,6 +220,7 @@ retry:
 		case FTS_F:
 		case FTS_NSOK: {
 			struct lean_ino_info *li = create_file(sbi, f);
+
 			if (!li)
 				goto out;
 			put_inode(sbi, li);
@@ -229,8 +234,8 @@ retry:
 		case FTS_DEFAULT:
 		default:
 			fprintf(stderr,
-				"Unsupported file type for file \"%s\"", 
-			        f->fts_path);
+				"Unsupported file type for file \"%s\"",
+				f->fts_path);
 		}
 		attempts = 0;
 	}
@@ -328,7 +333,7 @@ int main(int argc, char **argv)
 			if (parse_long(optarg, &band_sec))
 				return -1;
 			if (band_sec < 4096 ||
-				(band_sec & (band_sec - 1))) {
+			    (band_sec & (band_sec - 1))) {
 				error(-1, 0,
 				      "Sectors per band must be greater than or equal to 4096 and a power of 2");
 			}
@@ -432,7 +437,7 @@ int main(int argc, char **argv)
 		       new_band_sec, band_sec);
 		band_sec = new_band_sec;
 	}
-	bands = 1 + (sbi->sectors_total - 1)/band_sec;
+	bands = 1 + (sbi->sectors_total - 1) / band_sec;
 
 	if (uuid_is_null(uuid))
 		uuid_generate(uuid);
