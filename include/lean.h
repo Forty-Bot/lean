@@ -65,9 +65,6 @@ struct lean_superblock {
  * Superblock info in memory
  */
 struct lean_sb_info {
-	uint8_t prealloc; /* Extra sectors to allocate */
-	uint8_t log2_band_sectors;
-	uint32_t state;
 	uint8_t uuid[16];
 	uint8_t volume_label[64];
 	uint64_t sectors_total;
@@ -96,6 +93,10 @@ struct lean_sb_info {
 	uint8_t *disk;
 	int fd;
 #endif
+	/* Remaining on-disk members */
+	uint32_t state;
+	uint8_t prealloc; /* Extra sectors to allocate */
+	uint8_t log2_band_sectors;
 };
 
 /*
@@ -155,28 +156,8 @@ struct lean_inode {
 
 /*
  * Inode info in memory
- * TODO: reduce to smallest necessary info for driver
  */
 struct lean_ino_info {
-	uint8_t extent_count; /* Number of extents in this inode */
-	uint32_t indirect_count; /* Number of owned indirects */
-#ifndef __KERNEL__
-	uint32_t link_count; /* Number of references to this file */
-	uid_t uid; /* User id of the owner */
-	gid_t gid; /* Group id of the owner */
-	uint32_t attr; /* Attributes mask of the file; see: enum inode_attr */
-	uint64_t size; /* Size of the data in bytes, not including metadata */
-	uint64_t sector_count; /* Number of data sectors allocated */
-	int64_t time_access; /* Unix time of last access */
-	int64_t time_status; /* Unix time of last status change */
-	int64_t time_modify; /* Unix time of last modification */
-#endif
-	int64_t time_create; /* Unix time of creation */
-	uint64_t indirect_first;
-	uint64_t indirect_last;
-	uint64_t fork; /* Inode of fork, if existing */
-	uint64_t extent_starts[LEAN_INODE_EXTENTS];
-	uint32_t extent_sizes[LEAN_INODE_EXTENTS];
 #ifdef __KERNEL__
 	/*
 	 * Protects block allocation data (extent_*, indirect_*, sector_count)
@@ -186,6 +167,25 @@ struct lean_ino_info {
 	struct rw_semaphore alloc_lock;
 	struct inode vfs_inode;
 #endif
+	int64_t time_create; /* Unix time of creation */
+	uint64_t indirect_first;
+	uint64_t indirect_last;
+	uint64_t fork; /* Inode of fork, if existing */
+#ifndef __KERNEL__
+	uint64_t size; /* Size of the data in bytes, not including metadata */
+	uint64_t sector_count; /* Number of data sectors allocated */
+	int64_t time_access; /* Unix time of last access */
+	int64_t time_status; /* Unix time of last status change */
+	int64_t time_modify; /* Unix time of last modification */
+	uint32_t attr; /* Attributes mask of the file; see: enum inode_attr */
+	uint32_t link_count; /* Number of references to this file */
+	uid_t uid; /* User id of the owner */
+	gid_t gid; /* Group id of the owner */
+#endif
+	uint32_t indirect_count; /* Number of owned indirects */
+	uint8_t extent_count; /* Number of extents in this inode */
+	uint64_t extent_starts[LEAN_INODE_EXTENTS];
+	uint32_t extent_sizes[LEAN_INODE_EXTENTS];
 };
 
 /*
