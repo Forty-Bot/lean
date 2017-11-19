@@ -200,6 +200,7 @@ retry:
 			} else {
 				attempts = 0;
 				fts_set(fts, f, FTS_SKIP);
+				break;
 			}
 		}
 		case FTS_D:
