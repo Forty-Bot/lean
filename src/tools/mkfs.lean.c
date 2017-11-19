@@ -370,7 +370,7 @@ int main(int argc, char **argv)
 		case 'p':
 			if (parse_long(optarg, &prealloc))
 				return -1;
-			if (sbi->prealloc < 1 || sbi->prealloc > 256) {
+			if (prealloc < 1 || prealloc > 256) {
 				error(-1, 0,
 				      "Between 1 and 256 sectors must be preallocated");
 			}
