@@ -28,7 +28,7 @@ uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
 {
 	uint64_t sector;
 
-	assert(*count <= 1 << 31);
+	assert(*count <= (uint32_t)1 << 31);
 
 	sector = find_next_sector(li);
 	sector = alloc_sectors(sbi, sector, count);
