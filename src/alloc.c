@@ -311,6 +311,17 @@ struct lean_try_alloc_data {
 	uint8_t off;
 };
 
+enum lean_try_alloc_state {
+	LTAS_GREEDY, /* Assume there is a free bit very near where we start
+			searching, but not necessarily a full byte */
+	LTAS_BYTEWISE, /* Search for a free byte */
+	LTAS_BITWISE, /* Search for a free bit */
+	LTAS_FOUND_BYTE,
+	LTAS_FOUND_BIT,
+	LTAS_FOUND_GREEDY,
+	LTAS_ACQUIRED,
+};
+
 /*
  * This iterator tries to find the first free byte of sectors and then any free
  * sector. It then allocates the sector, if possible, or returns to searching.
@@ -318,25 +329,40 @@ struct lean_try_alloc_data {
  * It returns the number of sectors allocated, and stores the first sector
  * (relative to he start of the band) in data->sector
  *
- * The longest path through this function is:
- * 1. data->off is not zero, so start with a bitwise search
- * 2. bitwise search finds a sector
- * 3. sector was taken, so start bytewise search where we left off
- * 4. bytewise search finds a sector
- * 5. sector was taken, so restart bytewise search where we left off
- * 6. repeat until we reach the end of the band
- * 7. restart bitwise search at data->off
- * 8. bitwise search finds a sector
- * 9. sector was taken, so restart bitwise search where we left off
- * 10. repeat until we reach the end of the band or finally allocate something
+ * We use a lean_try_alloc_state enum to implement a state machine for the
+ * search. Valid state transitions are:
+ *
+ * Current State     -> Next State        | Comment
+ * ---------------------------------------+-------------------------------------
+ * LTAS_GREEDY       -> LTAS_FOUND_GREEDY |
+ * LTAS_GREEDY       -> return            | We searched the entire band and
+ *                                        | found no free sectors, so we're done
+ * LTAS_FOUND_GREEDY -> LTAS_BYTEWISE     | If someone else took the sector,
+ *                                        | they likely took adjacent sectors as
+ *                                        | well. Try searching bytewise
+ *                                        | instead, as our greedy assumptions
+ *                                        | are no longer valid
+ * LTAS_FOUND_GREEDY -> LTAS_ACQUIRED     |
+ * LTAS_BYTEWISE     -> LTAS_FOUND_BYTE   |
+ * LTAS_BYTEWISE     -> LTAS_BITWISE      | There may only be sub-byte (or
+ *                                        | unaligned) segments of free sectors
+ *                                        | left
+ * LTAS_FOUND_BYTE   -> LTAS_BYTEWISE     |
+ * LTAS_FOUND_BYTE   -> LTAS_ACQUIRED     |
+ * LTAS_BITWISE      -> LTAS_FOUND_BIT    |
+ * LTAS_BITWISE      -> return            | If a bitwise search yields nothing,
+ *                                        | we have completed our search
+ * LTAS_FOUND_BIT    -> LTAS_BITWISE      |
+ * LTAS_FOUND_BIT    -> LTAS_ACQUIRED     |
+ * LTAS_ACQUIRED     -> rest of function  | Complete the allocation process
  *
  * Takes data->bitmap->lock
  */
 static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 			       void *priv)
 {
-	bool bytewise_done = false;
 	char *ptr;
+	enum lean_try_alloc_iter_state state = LTAS_BYTEWISE;
 	int i, retries;
 	struct lean_try_alloc_data *data = priv;
 	struct page *page = data->bitmap->pages[page_nr];
@@ -344,35 +370,54 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 
 	pr_info("addr = %p size = %u, off = %u", addr, size, tmp);
 
-	/* If we have an offset, go straight to the bitwise search */
+	/* If we have an offset, go straight to the greedy bitwise search */
 	if (tmp)
-		goto bitwise;
+		state = LTAS_GREEDY;
 
-bytewise:
-	ptr = (char *)memscan(addr + (tmp >> 3), 0, size);
-	pr_info("Searching for a free byte... got %p", ptr);
-	if (ptr < addr + size) {
-		tmp = (ptr - addr) * 8;
-		goto found;
-	}
-	tmp = data->off;
-	bytewise_done = true;
-
-bitwise:
-	tmp = find_next_zero_bit((unsigned long *)addr, size, tmp);
-	pr_info("Searching for a free bit... got %d", tmp);
-	if (tmp < size * 8)
-		goto found;
-
-	return 0;
-
-found:
-	if (lean_set_bit_atomic(&data->bitmap->lock, tmp, addr)) {
-		/* We did not get the sector */
-		if (!bytewise_done)
-			goto bytewise;
-		else
-			goto bitwise;
+	while (state != LTAS_ACQUIRED) {
+		switch (state) {
+		case (LTAS_BYTEWISE):
+			ptr = (char *)memscan(addr + (tmp >> 3), 0, size);
+			pr_info("Searching for a free byte... got %p", ptr);
+			if (ptr < addr + size) {
+				tmp = (ptr - addr) * 8;
+				state = LTAS_FOUND_BYTE;
+				break;
+			}
+			tmp = data->off;
+			state = LTAS_BITWISE;
+			break;
+		case (LTAS_GREEDY):
+		case (LTAS_BITWISE):
+			tmp = find_next_zero_bit((unsigned long *)addr,
+						 size, tmp);
+			pr_info("Searching for a free bit... got %d", tmp);
+			if (tmp < size * 8) {
+				if (state == LTAS_GREEDY)
+					state = LTAS_FOUND_GREEDY;
+				else
+					state = LTAS_FOUND_BIT;
+				break;
+			} else {
+				return 0;
+			}
+		case (LTAS_FOUND_GREEDY):
+		case (LTAS_FOUND_BYTE):
+		case (LTAS_FOUND_BIT):
+			if (lean_set_bit_atomic(&data->bitmap->lock,
+						tmp, addr)) {
+				/* We did not get the sector */
+				if (state == LTAS_FOUND_BYTE ||
+				    state == LTAS_FOUND_GREEDY)
+					state = LTAS_BYTEWISE;
+				else
+					state = LTAS_BITWISE;
+			} else {
+				state = LTAS_ACQUIRED;
+			}
+		case (LTAS_ACQUIRED):
+			break;
+		}
 	}
 
 	data->sector = tmp + page_nr * PAGE_SHIFT;
@@ -429,8 +474,8 @@ static uint32_t lean_try_alloc(struct super_block *s,
 	/* Try searching starting from the goal */
 	found = lean_try_alloc_iter((goal >> 3) + addr + bitmap->off,
 				    bitmap->len
-					- goal_page_nr * PAGE_SIZE
-					- (goal >> 3),
+				    - goal_page_nr * PAGE_SIZE
+				    - (goal >> 3),
 				    goal_page_nr, &priv);
 	if (priv.err) {
 		goto err;
