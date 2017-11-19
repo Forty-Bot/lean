@@ -108,18 +108,18 @@ struct lean_sb_info {
  * Structure containing additional extents of a file
  */
 struct lean_indirect {
-	uint32_t checksum;
+	le32 checksum;
 	uint8_t magic[4]; /* Must be LEAN_MAGIC_INDIRECT */
-	uint64_t sector_count; /* Total amount of sectors in this index */
-	uint64_t inode; /* Inode this indirect belongs to */
-	uint64_t sector; /* The sector this indirect is in */
-	uint64_t prev;
-	uint64_t next;
+	le64 sector_count; /* Total amount of sectors in this index */
+	le64 inode; /* Inode this indirect belongs to */
+	le64 sector; /* The sector this indirect is in */
+	le64 prev;
+	le64 next;
 	uint8_t extent_count; /* Total extents in this indirect */
 	uint8_t reserved[7];
 	/* Extents are split into two arrays for alignment */
-	uint64_t extent_starts[LEAN_INDIRECT_EXTENTS];
-	uint32_t extent_sizes[LEAN_INDIRECT_EXTENTS];
+	le64 extent_starts[LEAN_INDIRECT_EXTENTS];
+	le32 extent_sizes[LEAN_INDIRECT_EXTENTS];
 } __packed;
 
 /*
