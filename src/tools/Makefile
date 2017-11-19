@@ -1,8 +1,8 @@
-CC = gcc
-RM = rm -f
-CFLAGS = -pedantic -Wall -Wno-pointer-sign -Wno-pointer-arith -g -I../../include
-LDFLAGS = 
-LDLIBS = -luuid -lrt
+CC ?= gcc
+RM ?= rm -f
+CFLAGS += -pedantic -Wall -Wextra -Wno-pointer-sign -Wno-pointer-arith -g -I../../include
+LDFLAGS +=
+LDLIBS += -luuid -lrt
 
 SRCS := $(wildcard *.c)
 OBJS := $(SRCS:.c=.o)
