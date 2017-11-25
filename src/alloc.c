@@ -362,7 +362,7 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 			       void *priv)
 {
 	char *ptr;
-	enum lean_try_alloc_iter_state state = LTAS_BYTEWISE;
+	enum lean_try_alloc_state state = LTAS_BYTEWISE;
 	int i, retries;
 	struct lean_try_alloc_data *data = priv;
 	struct page *page = data->bitmap->pages[page_nr];
