@@ -1,10 +1,13 @@
 #include "user.h"
 #include "lean.h"
+#include "find.h"
 
 #include <assert.h>
+#include <bsd/stdlib.h>
 #include <error.h>
 #include <fcntl.h>
 #include <fts.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,7 +15,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <bsd/stdlib.h>
 
 /*
  * This function returns the sector which is immediately after the end
@@ -305,4 +307,106 @@ struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
 err:
 	free(inode);
 	return NULL;
+}
+
+/* This is similar to lean_try_alloc_iter, except we don't need to worry about
+ * concurrency */
+static uint32_t try_alloc(uint8_t *bitmap, uint32_t size,
+			  uint32_t goal, uint32_t *count)
+{
+	bool greedy = false;
+	uint32_t sector; /* Local sector */
+	uint32_t bitsize = size * 8;
+	uint8_t *tmp;
+	unsigned i;
+
+	if (goal) {
+		greedy = true;
+		goto bitwise;
+	}
+
+bytewise:
+	tmp = memchr(bitmap, 0, size);
+	if (tmp) {
+		sector = (tmp - bitmap) * 8;
+		goto found;
+	}
+
+bitwise:
+	sector = find_next_zero_bit((size_t *)bitmap, bitsize, goal);
+	if (sector < bitsize)
+		goto found;
+	if (greedy) {
+		greedy = false;
+		goto bytewise;
+	}
+
+	*count = 0;
+	return 0;
+
+found:
+	for (i = 0; i < *count; i++)
+		if (test_and_set_bit(sector + i, (size_t *)bitmap))
+			break;
+
+	*count = i;
+	return sector;
+}
+
+uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,
+		       uint32_t *count)
+{
+	unsigned i;
+	uint8_t *bitmap;
+	uint32_t band_tgt;
+	uint32_t size;
+	uint64_t alloc;
+	uint64_t band;
+	uint64_t ret;
+
+
+	if (goal <= sbi->root || goal > sbi->sectors_total)
+		goal = sbi->root;
+	band = goal >> sbi->log2_band_sectors;
+	band_tgt = goal & (sbi->band_sectors - 1);
+
+	for (i = 0; i < sbi->band_count; i++, band++) {
+		if (band >= sbi->band_count)
+			band = 0;
+
+		bitmap = LEAN_BITMAP(sbi, band);
+		size = LEAN_BITMAP_SIZE(sbi, band);
+		alloc = try_alloc(bitmap, size, band_tgt, count);
+		if (alloc)
+			break;
+
+		band_tgt = 0;
+	}
+
+	if (!alloc) {
+		errno = ENOSPC;
+		*count = 0;
+		return 0;
+	}
+
+	ret = alloc + band * sbi->band_sectors;
+
+	/* If we get one of these errors, something has gone horribly wrong;
+	 * just crash with an error.
+	 */
+	if (alloc < sbi->bitmap_size) {
+		error(-1, 0,
+		      "allocated %"PRIu32" blocks at sector %"PRIu64
+		      ", part of band %"PRIu64"'s bitmap",
+		      *count, ret, band);
+	}
+	if (ret + *count > sbi->sectors_total || ret <= sbi->root) {
+		error(-1, 0,
+		      "allocated %"PRIu32" blocks at sector %"PRIu64
+		      ", outside the data zone",
+		      *count, ret);
+	}
+
+	sbi->sectors_free -= *count;
+	return ret;
 }

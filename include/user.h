@@ -73,9 +73,31 @@ static inline int test_and_set_bit(int nr, size_t *addr)
 	return (old & mask) != 0;
 }
 
-/* XXX: Different (but similar) meaning than in kernel.h */
+/* XXX: LEAN_I and LEAN_BITMAP have different (but similar) meaning than in
+ * kernel.h */
 #define LEAN_I(sbi, inode) ((struct lean_inode *) \
 			    &sbi->disk[inode->extent_starts[0] * LEAN_SEC])
+
+static inline uint8_t *LEAN_BITMAP(struct lean_sb_info *sbi, uint64_t band)
+{
+	uint64_t sector;
+
+	if (band != 0)
+		sector = sbi->bitmap_start;
+	else
+		sector = band * sbi->band_sectors;
+	return &sbi->disk[sector * LEAN_SEC];
+}
+
+/* Size of the bitmap in bytes */
+static inline uint32_t LEAN_BITMAP_SIZE(struct lean_sb_info *sbi, uint64_t band)
+{
+	if (band + 1 < sbi->band_count)
+		return sbi->band_sectors >> 3;
+	else
+		/* The last bitmap may be cut short */
+		return (sbi->sectors_total - band * sbi->band_sectors) >> 3;
+}
 
 /* Note to implementers: use errno to return errors */
 uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,
