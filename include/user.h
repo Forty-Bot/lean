@@ -4,18 +4,28 @@
 #include "lean.h"
 
 #include <errno.h>
+#include <features.h>
 #include <fts.h>
 #include <linux/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+/* The copy_file_range() system call first appeared in Linux 4.5, but glibc 2.27
+ * provides a user-space emulation when it is not available.
+ */
+#if __GLIBC__ && __GLIBC_PREREQ(2,27)
+#define _GNU_SOURCE
+#define WANT_COPY_FILE_RANGE
+#endif
 #include <unistd.h>
 
+/* Function wrappers for syscalls not yet in glibc */
 static inline int statx(int dirfd, const char *pathname, int flags,
 			unsigned int mask, struct statx *statxbuf)
 {
 	return syscall(SYS_statx, dirfd, pathname, flags, mask, statxbuf);
 }
 
+#ifdef WANT_COPY_FILE_RANGE
 static inline loff_t copy_file_range(int fd_in, loff_t *off_in, int fd_out,
 				     loff_t *off_out, size_t len,
 				     unsigned int flags)
@@ -23,6 +33,7 @@ static inline loff_t copy_file_range(int fd_in, loff_t *off_in, int fd_out,
 	return syscall(SYS_copy_file_range, fd_in, off_in, fd_out, off_out,
 		       len, flags);
 }
+#endif
 
 #define max(a, b) \
 __extension__ ({ \
