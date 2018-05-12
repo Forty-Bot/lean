@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <bsd/stdlib.h>
 
 /*
  * This function returns the sector which is immediately after the end
@@ -53,27 +54,13 @@ uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
 	return sector;
 }
 
-/* XXX:Must only be called on freshly-created directories! */
+/* XXX Must only be called on freshly-created directories! */
 void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
 		     struct lean_ino_info *dir)
 {
-	struct lean_inode *inode = LEAN_I(sbi, dir);
-	struct lean_dir_entry *data = (struct lean_dir_entry *)(&inode[1]);
-
-	dir->size += LEAN_DOTFILES_SIZE;
-	memset(data, 0, LEAN_DOTFILES_SIZE);
-
-	data[0].inode = htole64(dir->extent_starts[0]);
-	data[0].type = LFT_DIR;
-	data[0].entry_length = 1;
-	data[0].name_length = htole16(1);
-	data[0].name[0] = '.';
-	data[1].inode = htole64(parent->extent_starts[0]);
-	data[1].type = LFT_DIR;
-	data[1].entry_length = 1;
-	data[1].name_length = htole16(2);
-	data[1].name[0] = '.';
-	data[1].name[1] = '.';
+	if (add_link(sbi, dir, dir, ".", 1)
+	    || add_link(sbi, dir, parent, "..", 2))
+	    error(0, errno, "Could not create dot directories(!)");
 }
 
 /*
@@ -84,6 +71,7 @@ void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
  */
 struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f)
 {
+	struct lean_ino_info *dir = (struct lean_ino_info *)f->fts_pointer;
 	struct lean_ino_info *li;
 	struct statx stat;
 
@@ -97,9 +85,8 @@ struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f)
 		return NULL;
 	}
 
-	li = create_inode_stat(sbi, &stat);
-	if (add_link(sbi, (struct lean_ino_info *)f->fts_pointer, li,
-		     f->fts_name, f->fts_namelen))
+	li = create_inode_stat(sbi, dir, &stat);
+	if (add_link(sbi, dir, li, f->fts_name, f->fts_namelen))
 		return NULL;
 
 	return li;
@@ -254,6 +241,68 @@ int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
 	memcpy(de->name, name, name_length);
 
 	dir->size += entry_length;
+	inode->link_count++;
 
 	return 0;
+}
+
+/*
+ * Try to spread top-level directories, but keep subdirectories together for
+ * locality. For more information, see src/inode.c
+ */
+static uint64_t find_goal_dir(struct lean_sb_info *sbi,
+			      struct lean_ino_info *parent)
+{
+	if (parent->extent_starts[0] == sbi->root)
+		return arc4random_uniform(sbi->band_count) * sbi->band_sectors;
+	else
+		return parent->extent_starts[0];
+}
+
+/* This isn't ideal (we want to spread files around the disk, and this will
+ * bunch them up in a linear fasion), but it's ok at creation.
+ */
+static uint64_t find_goal_other(struct lean_sb_info *sbi,
+				struct lean_ino_info *parent)
+{
+	return parent->extent_starts[0];
+}
+
+struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
+					struct lean_ino_info *dir,
+					struct statx *stat)
+{
+	struct lean_ino_info *inode;
+	uint32_t count = sbi->prealloc;
+	uint64_t sec;
+
+	inode = malloc(sizeof(struct lean_ino_info));
+	if (!inode)
+		return NULL;
+
+	sec = S_ISDIR(stat->stx_mode) ? find_goal_dir(sbi, dir)
+				      : find_goal_other(sbi, dir);
+
+	sec = alloc_sectors(sbi, sec, &count);
+	if (errno)
+		goto err;
+
+	inode->extent_count = count;
+	inode->indirect_count = 0;
+	inode->link_count = 0;
+	inode->uid = stat->stx_uid;
+	inode->gid = stat->stx_gid;
+
+	/* TODO: use an ioctl like in lsattr */
+	inode->attr = stat->stx_mode & LIA_POSIX_MASK;
+	if (S_ISREG(stat->stx_mode))
+		inode->attr |= LIA_FMT_REG;
+	if (S_ISDIR(stat->stx_mode))
+		inode->attr |= LIA_FMT_DIR;
+	if (S_ISLNK(stat->stx_mode))
+		inode->attr |= LIA_FMT_SYM;
+
+err:
+	free(inode);
+	return NULL;
 }

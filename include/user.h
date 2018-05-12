@@ -57,6 +57,7 @@ __extension__ ({ \
 uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,
 		       uint32_t *count);
 struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
+					struct lean_ino_info *dir,
 					struct statx *stat);
 int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
 	     struct lean_ino_info *inode, uint8_t *name, uint8_t namelen);

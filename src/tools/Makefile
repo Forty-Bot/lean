@@ -2,7 +2,7 @@ CC ?= gcc
 RM ?= rm -f
 CFLAGS += -pedantic -Wall -Wextra -Wno-pointer-sign -Wno-pointer-arith -g -I../../include
 LDFLAGS +=
-LDLIBS += -luuid -lrt
+LDLIBS += -luuid -lrt -lbsd
 
 SRCS := $(wildcard *.c)
 OBJS := $(SRCS:.c=.o)
