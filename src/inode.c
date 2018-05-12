@@ -391,11 +391,13 @@ static uint64_t lean_find_goal_dir(struct inode *parent)
 	uint32_t mean_free = lean_count_free_sectors(s) / sbi->band_count;
 	uint64_t goal, band;
 
-	if (parent == d_inode(s->s_root))
-		goal = (prandom_u32() << 31) + prandom_u32();
-	else
+	if (parent == d_inode(s->s_root)) {
+		band = prandom_u32() % sbi->band_count;
+		goal = band * sbi->band_sectors;
+	} else {
 		goal = parent->i_ino;
-	band = goal % sbi->band_count;
+		band = goal % sbi->band_count;
+	}
 
 	/* Try to find a band with above-average free sectors */
 	for (i = 0; i < sbi->band_count; i++) {
