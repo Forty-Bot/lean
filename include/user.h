@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <features.h>
 #include <fts.h>
+#include <limits.h>
 #include <linux/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -48,6 +49,29 @@ __extension__ ({ \
 	 __typeof__(b) _b = (b); \
 	 _a < _b ? _a : _b; \
 })
+
+#define BITS_PER_SIZE_T (sizeof(size_t) * CHAR_BIT)
+#define BITMAP_FIRST_WORD_MASK(start) (~((size_t)0) \
+				       << ((start) & (BITS_PER_SIZE_T - 1)))
+#define BIT_MASK(nr) (((size_t)1) << ((nr) % BITS_PER_SIZE_T))
+#define BIT_WORD(nr) ((nr) / BITS_PER_SIZE_T)
+
+/**
+ * test_and_set_bit - Set a bit and return its old value
+ * @nr: Bit to set
+ * @addr: Address to count from
+ */
+static inline int test_and_set_bit(int nr, size_t *addr)
+{
+	size_t mask = BIT_MASK(nr);
+	size_t *p = ((size_t *)addr) + BIT_WORD(nr);
+	size_t old;
+
+	old = *p;
+	*p = old | mask;
+
+	return (old & mask) != 0;
+}
 
 /* XXX: Different (but similar) meaning than in kernel.h */
 #define LEAN_I(sbi, inode) ((struct lean_inode *) \
