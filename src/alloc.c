@@ -390,7 +390,7 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 		case (LTAS_GREEDY):
 		case (LTAS_BITWISE):
 			tmp = find_next_zero_bit((unsigned long *)addr,
-						 size, tmp);
+						 size * 8, tmp);
 			pr_info("Searching for a free bit... got %d", tmp);
 			if (tmp < size * 8) {
 				if (state == LTAS_GREEDY)
