@@ -73,7 +73,8 @@ void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
  */
 struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f)
 {
-	struct lean_ino_info *dir = (struct lean_ino_info *)f->fts_pointer;
+	struct lean_ino_info *dir =
+		(struct lean_ino_info *)f->fts_parent->fts_pointer;
 	struct lean_ino_info *li;
 	struct statx stat;
 
@@ -183,7 +184,8 @@ struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
 
 	/* Original directory size is nonsense */
 	li->size = 0;
-	create_dotfiles(sbi, (struct lean_ino_info *)f->fts_pointer, li);
+	create_dotfiles(sbi, (struct lean_ino_info *)f->fts_parent->fts_pointer,
+			li);
 
 	/* Try to allocate all the space for direntries up front */
 	for (; child; child = child->fts_link)
