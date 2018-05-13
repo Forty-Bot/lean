@@ -88,6 +88,8 @@ struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f)
 	}
 
 	li = create_inode_stat(sbi, dir, &stat);
+	if (!li)
+		return NULL;
 	if (add_link(sbi, dir, li, f->fts_name, f->fts_namelen))
 		return NULL;
 
