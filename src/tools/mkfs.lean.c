@@ -463,11 +463,11 @@ int main(int argc, char **argv)
 	       device, size, sbi->sectors_total, bands, band_sec, uuid_string,
 	       sbi->volume_label);
 
+	sbi->band_sectors = band_sec;
+	sbi->band_count = bands;
 	/* Compute log2(band_sec) */
 	while (band_sec >>= 1)
 		sbi->log2_band_sectors++;
-	sbi->band_sectors = band_sec;
-	sbi->band_count = bands;
 
 	sbi->disk = mmap(NULL, size, PROT_WRITE, MAP_SHARED, sbi->fd, 0);
 	if (sbi->disk == MAP_FAILED)
