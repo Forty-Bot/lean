@@ -82,7 +82,7 @@ static inline uint8_t *LEAN_BITMAP(struct lean_sb_info *sbi, uint64_t band)
 {
 	uint64_t sector;
 
-	if (band != 0)
+	if (band == 0)
 		sector = sbi->bitmap_start;
 	else
 		sector = band * sbi->band_sectors;

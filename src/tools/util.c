@@ -77,8 +77,7 @@ struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f)
 	struct lean_ino_info *li;
 	struct statx stat;
 
-	if (!statx(AT_FDCWD, f->fts_accpath, 0,
-		   STATX_ALL, &stat)) {
+	if (statx(AT_FDCWD, f->fts_accpath, 0, STATX_ALL, &stat)) {
 		int errsv = errno;
 
 		error(0, errno, "Error stat-ing file \"%s\"",
