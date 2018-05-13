@@ -21,6 +21,8 @@
 #include <unistd.h>
 #include <uuid/uuid.h>
 
+bool verbose = false;
+
 /*
  * Error policy:
  * Everything which happens before we have a complete working filesystem on disk
@@ -172,6 +174,8 @@ int populate_fs(struct lean_sb_info *sbi,
 
 	/* XXX: fts_read sets errno whenever it returns NULL, unlike readdir! */
 	while ((f = fts_read(fts))) {
+		if (verbose)
+			printf("processing \"%s\"\n", f->fts_path);
 		if (f->fts_level <= 0) {
 			f->fts_pointer = root;
 			continue;
@@ -299,6 +303,7 @@ int parse_long(const char *str, long *n)
 "\t-f superblock-offset\n" \
 "\t-n volume-label\n" \
 "\t-p default-allocated-sectors\n" \
+"\t-v verbose\n" \
 "\t-U UUID\n" \
 "\t-h print this help message\n"
 
@@ -328,7 +333,7 @@ int main(int argc, char **argv)
 
 	uuid_clear(uuid);
 
-	while ((c = getopt(argc, argv, "b:d:f:hn:p:U:")) != -1) {
+	while ((c = getopt(argc, argv, "b:d:f:hn:p:vU:")) != -1) {
 		switch (c) {
 		case 'b':
 			if (parse_long(optarg, &band_sec))
@@ -375,6 +380,9 @@ int main(int argc, char **argv)
 				      "Between 1 and 256 sectors must be preallocated");
 			}
 			sbi->prealloc = prealloc;
+			break;
+		case 'v':
+			verbose = true;
 			break;
 		case 'U':
 			if (uuid_parse(optarg, uuid)) {

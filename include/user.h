@@ -8,6 +8,7 @@
 #include <fts.h>
 #include <limits.h>
 #include <linux/stat.h>
+#include <stdbool.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 /* The copy_file_range() system call first appeared in Linux 4.5, but glibc 2.27
@@ -104,6 +105,9 @@ static inline uint64_t lean_timex(struct statx_timestamp ts)
 {
 	return (ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
 }
+
+/* Defined in mkfs.lean.c */
+extern bool verbose;
 
 /* Note to implementers: use errno to return errors */
 uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,
