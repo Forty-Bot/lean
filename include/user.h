@@ -64,7 +64,7 @@ __extension__ ({ \
 static inline int test_and_set_bit(int nr, size_t *addr)
 {
 	size_t mask = BIT_MASK(nr);
-	size_t *p = ((size_t *)addr) + BIT_WORD(nr);
+	size_t *p = addr + BIT_WORD(nr);
 	size_t old;
 
 	old = *p;
