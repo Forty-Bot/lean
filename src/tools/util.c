@@ -270,6 +270,7 @@ static uint64_t find_goal_dir(struct lean_sb_info *sbi,
 static uint64_t find_goal_other(struct lean_sb_info *sbi,
 				struct lean_ino_info *parent)
 {
+	(void)sbi;
 	return parent->extent_starts[0];
 }
 
