@@ -292,8 +292,10 @@ struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
 	if (errno)
 		goto err;
 
-	inode->extent_count = count;
 	inode->indirect_count = 0;
+	inode->indirect_first = 0;
+	inode->indirect_last = 0;
+	inode->fork = 0;
 	inode->link_count = 0;
 	inode->uid = stat->stx_uid;
 	inode->gid = stat->stx_gid;
@@ -306,6 +308,20 @@ struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
 		inode->attr |= LIA_FMT_DIR;
 	if (S_ISLNK(stat->stx_mode))
 		inode->attr |= LIA_FMT_SYM;
+
+	inode->size = stat->stx_size;
+	inode->sector_count = count;
+
+	inode->time_access = lean_timex(stat->stx_atime);
+	inode->time_status = lean_timex(stat->stx_ctime);
+	inode->time_modify = lean_timex(stat->stx_mtime);
+	inode->time_create = lean_timex(stat->stx_btime);
+
+	inode->extent_count = 1;
+	inode->extent_starts[0] = sec;
+	inode->extent_sizes[0] = count;
+
+	return inode;
 
 err:
 	free(inode);

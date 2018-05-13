@@ -99,6 +99,12 @@ static inline uint32_t LEAN_BITMAP_SIZE(struct lean_sb_info *sbi, uint64_t band)
 		return (sbi->sectors_total - band * sbi->band_sectors) >> 3;
 }
 
+/* statx time helper functions */
+static inline uint64_t lean_timex(struct statx_timestamp ts)
+{
+	return (ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
+}
+
 /* Note to implementers: use errno to return errors */
 uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,
 		       uint32_t *count);
