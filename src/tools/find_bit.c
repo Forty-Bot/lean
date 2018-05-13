@@ -21,6 +21,7 @@
 #include "user.h"
 
 #include <stddef.h>
+#include <strings.h>
 
 #define likely(x) x
 #define unlikely(x) x
@@ -35,44 +36,14 @@
 #define round_up(x, y) ((((x)-1) | __round_mask(x, y))+1)
 #define round_down(x, y) ((x) & ~__round_mask(x, y))
 
-
-/**
- * __ffs - find first bit in word.
- * @word: The word to search
- *
- * Undefined if no bit exists, so code should check against 0 first.
- */
-static inline size_t __ffs(size_t word)
-{
-	int num = 0;
-
-#if SIZE_MAX == 0xffffffff
-	if ((word & 0xffffffff) == 0) {
-		num += 32;
-		word >>= 32;
-	}
-#endif
-	if ((word & 0xffff) == 0) {
-		num += 16;
-		word >>= 16;
-	}
-	if ((word & 0xff) == 0) {
-		num += 8;
-		word >>= 8;
-	}
-	if ((word & 0xf) == 0) {
-		num += 4;
-		word >>= 4;
-	}
-	if ((word & 0x3) == 0) {
-		num += 2;
-		word >>= 2;
-	}
-	if ((word & 0x1) == 0)
-		num += 1;
-	return num;
-}
-
+#define ffs(x) _Generic((x), \
+			int: ffs, \
+			long: ffsl, \
+			long long: ffsll, \
+			unsigned: ffs, \
+			unsigned long: ffsl, \
+			unsigned long long: ffsll)(x)
+#define __ffs(x) (ffs(x) - 1)
 #define ffz(x) __ffs(~(x))
 
 /*
