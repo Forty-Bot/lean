@@ -329,45 +329,60 @@ err:
 	return NULL;
 }
 
+enum try_alloc_state {
+	TAS_GREEDY,
+	TAS_BYTEWISE,
+	TAS_BITWISE,
+	TAS_FOUND,
+};
+
 /* This is similar to lean_try_alloc_iter, except we don't need to worry about
  * concurrency */
 static uint32_t try_alloc(uint8_t *bitmap, uint32_t size,
 			  uint32_t goal, uint32_t *count)
 {
-	bool greedy = false;
+	enum try_alloc_state state = TAS_BYTEWISE;
 	uint32_t sector; /* Local sector */
 	uint32_t bitsize = size * 8;
 	uint8_t *tmp;
 	unsigned i;
 
-	if (goal) {
-		greedy = true;
-		goto bitwise;
+	if (goal)
+		state = TAS_GREEDY;
+
+	while(state != TAS_FOUND) {
+		switch (state) {
+		case (TAS_BYTEWISE):
+			tmp = memchr(bitmap, 0, size);
+			if (tmp) {
+				sector = (tmp - bitmap) * 8;
+				state = TAS_FOUND;
+			} else
+				state = TAS_BITWISE;
+			break;
+		case (TAS_GREEDY):
+		case (TAS_BITWISE):
+			sector = find_next_zero_bit((size_t *)bitmap,
+						    bitsize, goal);
+			if (sector < bitsize)
+				state = TAS_FOUND;
+			else if (state == TAS_GREEDY)
+				state = TAS_BYTEWISE;
+			else
+				return 0;
+			break;
+		case (TAS_FOUND):
+			break;
+		}
 	}
 
-bytewise:
-	tmp = memchr(bitmap, 0, size);
-	if (tmp) {
-		sector = (tmp - bitmap) * 8;
-		goto found;
-	}
-
-bitwise:
-	sector = find_next_zero_bit((size_t *)bitmap, bitsize, goal);
-	if (sector < bitsize)
-		goto found;
-	if (greedy) {
-		greedy = false;
-		goto bytewise;
-	}
-
-	*count = 0;
-	return 0;
-
-found:
 	for (i = 0; i < *count; i++)
 		if (test_and_set_bit(sector + i, (size_t *)bitmap))
 			break;
+	if (!sector)
+		error(0, 0, "Found sector is sector 0!");
+	if (!i)
+		error(0, 0, "Sector %"PRIu32" is already taken!", sector);
 
 	*count = i;
 	return sector;
