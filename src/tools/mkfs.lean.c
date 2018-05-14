@@ -176,7 +176,7 @@ int populate_fs(struct lean_sb_info *sbi,
 	while ((f = fts_read(fts))) {
 		if (verbose)
 			printf("processing \"%s\"\n", f->fts_path);
-		if (f->fts_level <= 0) {
+		if (f->fts_level <= 0 && f->fts_info == FTS_D) {
 			f->fts_pointer = root;
 			continue;
 		}
