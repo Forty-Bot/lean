@@ -82,7 +82,8 @@ static inline int test_and_set_bit(int nr, size_t *addr)
 /* XXX: LEAN_I and LEAN_BITMAP have different (but similar) meaning than in
  * kernel.h */
 #define LEAN_I(sbi, inode) ((struct lean_inode *) \
-			    &sbi->disk[inode->extent_starts[0] * LEAN_SEC])
+			    &sbi->disk[inode->extent_starts[0] \
+			    << LEAN_SEC_SHIFT])
 
 static inline uint8_t *LEAN_BITMAP(struct lean_sb_info *sbi, uint64_t band)
 {
@@ -120,7 +121,7 @@ uint64_t alloc_sectors(struct lean_sb_info *sbi, uint64_t goal,
 struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
 					struct lean_ino_info *dir,
 					struct statx *stat);
-int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
+bool add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
 	     struct lean_ino_info *inode, uint8_t *name, uint8_t namelen);
 
 uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,

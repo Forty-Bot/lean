@@ -209,23 +209,46 @@ struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
 }
 
 /* TODO: Search for empty dentries instead of just appending */
-int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
+/* Returns true on error */
+bool add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
 	     struct lean_ino_info *inode, uint8_t *name, uint8_t name_length)
 {
 	struct lean_dir_entry *de;
 	uint8_t entry_length = LEAN_DIR_ENTRY_LEN(name_length);
-	uint64_t sector = dir->extent_starts[dir->extent_count - 1]
-			  + dir->extent_sizes[dir->extent_count - 1] - 1;
-	unsigned int off = (sector == dir->extent_starts[0])
-			   ? sizeof(struct lean_inode) + dir->size
-			   : dir->size & LEAN_SEC_MASK;
+	/* We only ever need to find one sector plus another behind it */
+	uint32_t count = 2;
+	/* sector relative to its position in the inode */
+	uint64_t lsec = dir->size >> LEAN_SEC_SHIFT;
+	uint64_t sector;
+	unsigned int off;
 
+	sector = lean_find_sector(dir, lsec, &count);
+	if (!sector) {
+		errno = EINVAL;
+		return true;
+	}
+
+	off = lsec ? dir->size & LEAN_SEC_MASK
+		   : sizeof(struct lean_inode) + dir->size;
+	/* If we don't have space
+	 * - Check if there is another sector in this extent
+	 * - See if there are more sectors in the inode
+	 * - Allocate a new sector
+	 */
 	if (entry_length > LEAN_SEC - off) {
-		uint32_t count = 0;
-
-		sector = extend_inode(sbi, dir, &count);
-		if (sector == 0)
-			return -1;
+		lsec++;
+		if (count > 1)
+			sector++;
+		else {
+			count = 1;
+			sector = lean_find_sector(dir, lsec, &count);
+			if (!sector) {
+				sector = extend_inode(sbi, dir, &count);
+				if (!sector)
+					return true;
+				lsec = dir->extent_count - 1;
+			}
+		}
 		off = 0;
 	}
 
@@ -236,10 +259,12 @@ int add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
 	de->name_length = htole16(name_length);
 	memcpy(de->name, name, name_length);
 
-	dir->size += entry_length;
+	dir->size = lsec ? (lsec << LEAN_SEC_SHIFT) + off + entry_length
+			 : dir->size
+			   + entry_length * sizeof(struct lean_dir_entry);
 	inode->link_count++;
 
-	return 0;
+	return false;
 }
 
 /*
