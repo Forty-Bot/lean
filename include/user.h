@@ -1,23 +1,28 @@
 #ifndef USER_H
 #define USER_H
 
+/* The copy_file_range() system call first appeared in Linux 4.5, but glibc 2.27
+ * provides a user-space emulation when it is not available.
+ * TODO: use a configure script for this
+ */
+#include <features.h>
+#if __GLIBC__ && __GLIBC_PREREQ(2,27)
+#define _GNU_SOURCE
+#undef _FEATURES_H
+#include <features.h>
+#else
+#define WANT_COPY_FILE_RANGE
+#endif
+
 #include "lean.h"
 
 #include <errno.h>
-#include <features.h>
 #include <fts.h>
 #include <limits.h>
 #include <linux/stat.h>
 #include <stdbool.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
-/* The copy_file_range() system call first appeared in Linux 4.5, but glibc 2.27
- * provides a user-space emulation when it is not available.
- */
-#if __GLIBC__ && __GLIBC_PREREQ(2,27)
-#define _GNU_SOURCE
-#define WANT_COPY_FILE_RANGE
-#endif
 #include <unistd.h>
 
 /* Function wrappers for syscalls not yet in glibc */
