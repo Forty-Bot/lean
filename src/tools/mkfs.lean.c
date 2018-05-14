@@ -73,7 +73,7 @@ uint64_t generate_bm(struct lean_sb_info *sbi)
 	bands = 1 + (sbi->sectors_total - 1) / band_sec;
 
 	bm_size = band_sec / 8;
-	bm = malloc(bm_size);
+	bm = calloc(1, bm_size);
 	if (!bm)
 		error(-1, errno, "Could not allocate memory for bitmap");
 	memset(bm, 0, bm_size);
@@ -132,7 +132,7 @@ int generate_fs(struct lean_sb_info *sbi,
 
 	data_size = 2 * sizeof(*data);
 	root_ino = (struct lean_inode *)&sbi->disk[sbi->root * LEAN_SEC];
-	root = malloc(sizeof(*root));
+	root = calloc(1, sizeof(*root));
 	if (!root)
 		error(-1, errno, "Could not allocate memory for root inode");
 	*rootp = root;
@@ -324,7 +324,7 @@ int main(int argc, char **argv)
 	struct lean_ino_info *root;
 	uuid_t uuid; /* UUID to use */
 
-	sbi = malloc(sizeof(*sbi));
+	sbi = calloc(1, sizeof(*sbi));
 	if (!sbi)
 		error(-1, errno, "Could not allocate memory for superblock");
 	memset(sbi, 0, sizeof(*sbi));

@@ -298,7 +298,7 @@ struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
 	uint32_t count = sbi->prealloc;
 	uint64_t sec;
 
-	inode = malloc(sizeof(struct lean_ino_info));
+	inode = calloc(1, sizeof(struct lean_ino_info));
 	if (!inode)
 		return NULL;
 
