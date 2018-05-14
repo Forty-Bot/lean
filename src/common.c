@@ -179,3 +179,36 @@ void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li)
 	}
 	li->checksum = tole32(lean_checksum(li, sizeof(*li)));
 }
+
+/*
+ * Find the nth sector in an inode
+ * count should contain the number of sectors we'd like to get
+ * on successful return it contains the amount of following sectors up to the
+ * input value of count
+ * Must be called with li->lock held
+ */
+uint64_t lean_find_sector(struct lean_ino_info *li, uint64_t sec,
+			  uint32_t *count)
+{
+	int i = 0;
+	uint64_t extent = li->extent_starts[i];
+	uint32_t size = li->extent_sizes[i];
+
+	/* Loop until we get to the right extent (or run out) */
+	while (sec > size && i < li->extent_count) {
+		extent = li->extent_starts[i];
+		size = li->extent_sizes[i];
+		sec -= size;
+		i++;
+	}
+
+	if (sec <= size) {
+		/* Try to map as many sectors as we can */
+		for (i = 1; i < *count && sec + i < size; i++)
+			;
+		*count = i;
+	} else {
+		return 0;
+	}
+	return extent + sec;
+}

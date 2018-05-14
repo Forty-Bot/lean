@@ -291,7 +291,7 @@ static inline struct timespec lean_timespec(int64_t time)
 	return ts;
 }
 
-/* util.c */
+/* common.c */
 #define WRONG_CHECKSUM 1
 uint32_t lean_checksum(const void *data, size_t size);
 int lean_superblock_to_info(const struct lean_superblock *sb,
@@ -300,5 +300,7 @@ void lean_info_to_superblock(const struct lean_sb_info *sbi,
 			     struct lean_superblock *sb);
 int lean_inode_to_info(const struct lean_inode *li, struct lean_ino_info *ii);
 void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li);
+uint64_t lean_find_sector(struct lean_ino_info *li, uint64_t sec,
+			  uint32_t *count);
 
 #endif // LEANFS_H

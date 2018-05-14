@@ -9,36 +9,6 @@
 #include <linux/random.h>
 #include <linux/writeback.h>
 
-/*
- * Find the nth sector in an inode
- * Modifies count on success
- * Must be called with li->lock held
- */
-static uint64_t lean_find_sector(struct lean_ino_info *li,
-				 uint64_t sec, uint32_t *count)
-{
-	int i = 0;
-	uint64_t extent = li->extent_starts[i];
-	uint32_t size = li->extent_sizes[i];
-
-	while (sec > size && i < li->extent_count) {
-		extent = li->extent_starts[i];
-		size = li->extent_sizes[i];
-		sec -= size;
-		i++;
-	}
-
-	if (sec <= size) {
-		/* Try to map as many sectors as we can */
-		for (i = 1; i < *count && sec + i < size; i++)
-			;
-		*count = i;
-	} else {
-		return 0;
-	}
-	return extent + sec;
-}
-
 static int lean_get_block(struct inode *inode, sector_t sec,
 			  struct buffer_head *bh_result, int create)
 {
