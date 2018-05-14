@@ -132,12 +132,10 @@ struct lean_ino_info *create_inode_ftsent(struct lean_sb_info *sbi, FTSENT *f);
 struct lean_ino_info *create_file(struct lean_sb_info *sbi, FTSENT *f);
 struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f);
 
-static inline int put_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
+static inline void put_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
 {
-	int ret = write_inode(sbi, li);
-
+	lean_info_to_inode(li, LEAN_I(sbi, li));
 	free(li);
-	return ret;
 }
 
 #endif /* USER_H */

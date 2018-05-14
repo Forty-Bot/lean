@@ -56,7 +56,6 @@ uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
 	return sector;
 }
 
-/* XXX Must only be called on freshly-created directories! */
 void create_dotfiles(struct lean_sb_info *sbi, struct lean_ino_info *parent,
 		     struct lean_ino_info *dir)
 {
@@ -207,14 +206,6 @@ struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
 	}
 
 	return li;
-}
-
-int write_inode(struct lean_sb_info *sbi, struct lean_ino_info *li)
-{
-	struct lean_inode *inode = LEAN_I(sbi, li);
-
-	memcpy(inode, li, sizeof(*inode));
-	return 0;
 }
 
 /* TODO: Search for empty dentries instead of just appending */
