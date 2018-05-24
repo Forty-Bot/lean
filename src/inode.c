@@ -16,7 +16,7 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 	int ret;
 	struct lean_ino_info *li = LEAN_I(inode);
 	uint64_t sector;
-	uint32_t count = bh_result->b_size >> inode->i_blkbits;
+	uint32_t count = bh_result->b_size >> LEAN_SEC_SHIFT;
 
 	lean_msg(inode->i_sb, KERN_DEBUG, "mapping inode %lu sector %lu",
 		 inode->i_ino, sec);
@@ -59,7 +59,7 @@ found:
 	lean_msg(inode->i_sb, KERN_DEBUG, "mapping %u sector(s) at sector %llu",
 		 count, sector);
 	map_bh(bh_result, inode->i_sb, sector);
-	bh_result->b_size = count << inode->i_blkbits;
+	bh_result->b_size = count << LEAN_SEC_SHIFT;
 	if (new)
 		set_buffer_new(bh_result);
 	ret = 0;
