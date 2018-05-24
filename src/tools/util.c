@@ -53,6 +53,7 @@ uint64_t extend_inode(struct lean_sb_info *sbi, struct lean_ino_info *li,
 		li->extent_count++;
 	}
 
+	li->sector_count += *count;
 	return sector;
 }
 
@@ -142,7 +143,8 @@ struct lean_ino_info *create_file(struct lean_sb_info *sbi, FTSENT *f)
 		} else {
 			first = false;
 			sector = li->extent_starts[0];
-			copy_size = min(LEAN_SEC - sizeof(struct lean_inode),
+			copy_size = min(LEAN_SEC * li->extent_sizes[0]
+					- sizeof(struct lean_inode),
 					size);
 			doff = sector * LEAN_SEC + sizeof(struct lean_inode);
 		}

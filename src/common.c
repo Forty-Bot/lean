@@ -190,7 +190,7 @@ void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li)
 uint64_t lean_find_sector(struct lean_ino_info *li, uint64_t sec,
 			  uint32_t *count)
 {
-	int i = 0;
+	unsigned i = 0;
 	uint64_t extent = li->extent_starts[i];
 	uint32_t size = li->extent_sizes[i];
 
