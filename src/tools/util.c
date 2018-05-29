@@ -16,6 +16,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* TODO: deallocate sectors on close */
+
 /*
  * This function returns the sector which is immediately after the end
  * of the last extent in an inode
@@ -222,7 +224,8 @@ bool add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
 	/* sector relative to its position in the inode */
 	uint64_t lsec = dir->size >> LEAN_SEC_SHIFT;
 	uint64_t sector;
-	unsigned int off;
+	unsigned unallocated;
+	unsigned off;
 
 	sector = lean_find_sector(dir, lsec, &count);
 	if (!sector) {
@@ -237,7 +240,21 @@ bool add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
 	 * - See if there are more sectors in the inode
 	 * - Allocate a new sector
 	 */
-	if (entry_length > LEAN_SEC - off) {
+	unallocated = LEAN_SEC - off;
+	if (entry_length * sizeof(struct lean_dir_entry) > unallocated) {
+		/* Fill the rest of the sector with an empty entry */
+		if (unallocated) {
+			struct lean_dir_entry *empty =
+				(struct lean_dir_entry *)
+				&sbi->disk[sector * LEAN_SEC + off];
+			empty->inode = 0;
+			empty->type = LFT_NONE;
+			empty->entry_length = unallocated
+					      / sizeof(struct lean_dir_entry);
+			empty->name_length = 0;
+			memset(&empty->name, 0, sizeof(empty->name));
+		}
+
 		lsec++;
 		if (count > 1)
 			sector++;
@@ -261,9 +278,10 @@ bool add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
 	de->name_length = htole16(name_length);
 	memcpy(de->name, name, name_length);
 
-	dir->size = lsec ? (lsec << LEAN_SEC_SHIFT) + off + entry_length
-			 : dir->size
-			   + entry_length * sizeof(struct lean_dir_entry);
+	dir->size = (lsec << LEAN_SEC_SHIFT)
+		    - sizeof(struct lean_inode)
+		    + off
+		    + entry_length * sizeof(struct lean_dir_entry);
 	inode->link_count++;
 
 	return false;
