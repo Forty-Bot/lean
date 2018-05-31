@@ -183,9 +183,13 @@ int populate_fs(struct lean_sb_info *sbi,
 
 retry:
 		switch (f->fts_info) {
+		/* A file for which no stat(2) information was available. 
+		 * We didn't ask for this... */
 		case FTS_NS:
 			/* what? */
+		/* A directory which cannot be read. */
 		case FTS_DNR:
+		/* This is an error return (generic) */
 		case FTS_ERR: {
 			/* If we have an individual file error, retry a few
 			 * times then give up and skip it
@@ -207,11 +211,13 @@ retry:
 				break;
 			}
 		}
+		/* A directory being visited in preorder. */
 		case FTS_D:
 			f->fts_pointer = create_dir(sbi, fts, f);
 			if (!f->fts_pointer)
 				goto out;
 			break;
+		/* A directory that causes a cycle in the tree. */
 		case FTS_DC:
 			if (add_link(sbi,
 				     (struct lean_ino_info *)f->fts_pointer,
@@ -219,10 +225,15 @@ retry:
 				     f->fts_name, f->fts_namelen))
 				goto out;
 			break;
+		/* A directory being visited in postorder. */
 		case FTS_DP:
 			put_inode(sbi, (struct lean_ino_info *)f->fts_pointer);
 			break;
+		/* A regular file. */
 		case FTS_F:
+			/* hmm... */
+		/* A  file  for  which  no stat(2) information was requested. 
+		 * We should only get files of this type */
 		case FTS_NSOK: {
 			struct lean_ino_info *li = create_file(sbi, f);
 
@@ -231,11 +242,16 @@ retry:
 			put_inode(sbi, li);
 			break;
 		}
+		/* A symbolic link. */
 		case FTS_SL:
+		/* A symbolic link with a nonexistent target. */
 		case FTS_SLNONE:
 			/* TODO: Implement symbolic links */
+		/* A file named "."  or ".." 
+		 * We didn't pass FTS_SEEDOT, so we shouldn't get this */
 		case FTS_DOT:
 			/* what? */
+		/* Who knows what this is... Char or block device? */
 		case FTS_DEFAULT:
 		default:
 			fprintf(stderr,
@@ -480,6 +496,8 @@ int main(int argc, char **argv)
 	if (fts) {
 		printf("Writing initial data to disk\n");
 		ret = populate_fs(sbi, root, fts);
+		fts_close(fts);
 	}
+	free(sbi);
 	return ret;
 }
