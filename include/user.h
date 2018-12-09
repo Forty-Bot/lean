@@ -3,6 +3,7 @@
 
 /* The copy_file_range() system call first appeared in Linux 4.5, but glibc 2.27
  * provides a user-space emulation when it is not available.
+ * statx() got added in glibc 2.28
  * TODO: use a configure script for this
  */
 #include <features.h>
@@ -10,6 +11,9 @@
 #define _GNU_SOURCE
 #undef _FEATURES_H
 #include <features.h>
+#if !__GLIBC_PREREQ(2,28)
+#define WANT_STATX
+#endif
 #else
 #define WANT_COPY_FILE_RANGE
 #endif
@@ -19,18 +23,24 @@
 #include <errno.h>
 #include <fts.h>
 #include <limits.h>
+#ifdef WANT_STATX
 #include <linux/stat.h>
+#else
+#include <sys/stat.h>
+#endif
 #include <stdbool.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 /* Function wrappers for syscalls not yet in glibc */
+#ifdef WANT_STATX
 static inline int statx(int dirfd, const char *pathname, int flags,
 			unsigned int mask, struct statx *statxbuf)
 {
 	return syscall(SYS_statx, dirfd, pathname, flags, mask, statxbuf);
 }
+#endif
 
 #ifdef WANT_COPY_FILE_RANGE
 static inline loff_t copy_file_range(int fd_in, loff_t *off_in, int fd_out,
