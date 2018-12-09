@@ -291,6 +291,22 @@ static inline struct timespec lean_timespec(int64_t time)
 	return ts;
 }
 
+#ifdef __KERNEL__
+static inline uint64_t lean_time64(struct timespec64 ts)
+{
+	return (ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
+}
+
+static inline struct timespec64 lean_timespec64(int64_t time)
+{
+	struct timespec64 ts;
+
+	ts.tv_sec = time / 1000000;
+	ts.tv_nsec = (time % 1000000) * 1000;
+	return ts;
+}
+#endif
+
 /* common.c */
 #define WRONG_CHECKSUM 1
 uint32_t lean_checksum(const void *data, size_t size);

@@ -12,6 +12,12 @@
 #define lean_write_page(page, sync) write_one_page(page)
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
+#define timespec timespec64
+#define lean_time lean_time64
+#define lean_timespec lean_timespec64
+#endif
+
 /*
  * Locks *must* be taken in the following order:
  * sbi->lock
