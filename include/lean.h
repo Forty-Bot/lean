@@ -140,7 +140,8 @@ struct lean_inode {
 	le32 checksum;
 	uint8_t magic[4]; /* Must be LEAN_MAGIC_INODE */
 	uint8_t extent_count; /* Number of extents in this inode */
-	uint8_t reserved[3];
+	uint8_t extra_type; /* Type of the data stored in extra */
+	uint8_t reserved[2];
 	le32 indirect_count; /* Number of owned indirects */
 	le32 link_count; /* Number of references to this file */
 	le32 uid; /* User id of the owner */
@@ -157,7 +158,16 @@ struct lean_inode {
 	le64 fork; /* Inode of fork, if existing */
 	le64 extent_starts[LEAN_INODE_EXTENTS];
 	le32 extent_sizes[LEAN_INODE_EXTENTS];
+	union {
+		struct {
+			le64 starts[LEAN_INODE_EXTRA_EXTENTS];
+			le32 sizes[LEAN_INODE_EXTRA_EXTENTS];
+		} extent;
+		uint8_t data[LEAN_INODE_EXTRA];
+		uint8_t xattr[LEAN_INODE_EXTRA];
+	} extra;
 } __packed;
+
 
 /*
  * Inode info in memory
@@ -187,6 +197,7 @@ struct lean_ino_info {
 	uid_t uid; /* User id of the owner */
 	gid_t gid; /* Group id of the owner */
 #endif
+	struct lean_extra_info *extra;
 	uint32_t indirect_count; /* Number of owned indirects */
 	uint8_t extent_count; /* Number of extents in this inode */
 	uint64_t extent_starts[LEAN_INODE_EXTENTS];

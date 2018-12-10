@@ -208,7 +208,10 @@ struct inode *lean_inode_alloc(struct super_block *s)
 static void lean_free_callback(struct rcu_head *head)
 {
 	struct inode *inode = container_of(head, struct inode, i_rcu);
+	struct lean_ino_info *li = LEAN_I(inode);
 
+	if (li->extra)
+		lean_extra_put(li->extra);
 	kmem_cache_free(lean_inode_cache, LEAN_I(inode));
 }
 

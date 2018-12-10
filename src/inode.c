@@ -139,19 +139,35 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 
 	raw = (struct lean_inode *)bh->b_data;
 	if (memcmp(raw->magic, LEAN_MAGIC_INODE, sizeof(raw->magic))) {
-		brelse(bh);
 		ret = -EUCLEAN;
 		goto bh_bad_inode;
 	}
 
 	if (lean_inode_to_info(raw, li)) {
-		brelse(bh);
 		ret = -EUCLEAN;
 		goto bh_bad_inode;
 	}
+
+	if (raw->extra_type != LXT_NONE) {
+		li->extra = lean_extra_get();
+		if (!li->extra) {
+			ret = -ENOMEM;
+			goto bh_bad_inode;
+		}
+
+		if (lean_inode_to_extra(raw, li->extra)) {
+			ret = -EUCLEAN;
+			goto bh_bad_inode;
+		}
+	} else {
+		li->extra = NULL;
+	}
 	brelse(bh);
 
-	if (li->extent_count < 1 || li->extent_count > LEAN_INODE_EXTENTS) {
+	if (li->extent_count < 1
+	    || ((!li->extra || li->extra->type != LXT_EXTENT)
+		&& li->extent_count > LEAN_INODE_EXTENTS)
+	    || li->extent_count > LEAN_INODE_EXTENTS_MAX) {
 		lean_msg(s, KERN_WARNING, "corrupt inode %lu", inode->i_ino);
 		ret = -EUCLEAN;
 		goto bad_inode;
@@ -250,6 +266,9 @@ int lean_write_inode(struct inode *inode, struct writeback_control *wbc)
 	raw->time_status = cpu_to_le64(lean_time(inode->i_ctime));
 	raw->time_modify = cpu_to_le64(lean_time(inode->i_mtime));
 	raw->size = cpu_to_le64(i_size_read(inode));
+
+	if (li->extra)
+		lean_extra_to_inode(li->extra, raw);
 
 	down_read(&li->alloc_lock);
 	raw->sector_count = cpu_to_le64(inode_get_bytes(inode) >>
@@ -475,6 +494,7 @@ struct inode *lean_new_inode(struct inode *dir, umode_t mode)
 	li->fork = 0;
 	li->extent_starts[0] = sec;
 	li->extent_sizes[0] = count;
+	li->extra = NULL;
 	init_rwsem(&li->alloc_lock);
 
 	inode->i_mapping->a_ops = &lean_aops;

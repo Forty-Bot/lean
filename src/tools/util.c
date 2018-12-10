@@ -357,6 +357,7 @@ struct lean_ino_info *create_inode_stat(struct lean_sb_info *sbi,
 	inode->extent_count = 1;
 	inode->extent_starts[0] = sec;
 	inode->extent_sizes[0] = count;
+	inode->extra = NULL;
 
 	return inode;
 
