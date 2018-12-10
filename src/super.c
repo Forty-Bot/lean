@@ -72,10 +72,8 @@ static int lean_statfs(struct dentry *de, struct kstatfs *buf)
 	buf->f_namelen = LEAN_DIR_NAME_MAX;
 	buf->f_flags = s->s_flags;
 
-#if 0
-	lean_msg(s, KERN_DEBUG, "bs %llu bc %llu bms %llu",
+	lean_debug(s, "bs %llu bc %llu bms %llu",
 		 sbi->band_sectors, sbi->band_count, sbi->bitmap_size);
-#endif /* LEAN_TESTING */
 
 	return 0;
 }

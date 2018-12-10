@@ -215,7 +215,7 @@ struct lean_ino_info *create_dir(struct lean_sb_info *sbi, FTS *fts, FTSENT *f)
 /* TODO: Search for empty dentries instead of just appending */
 /* Returns true on error */
 bool add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
-	     struct lean_ino_info *inode, uint8_t *name, uint8_t name_length)
+	      struct lean_ino_info *inode, uint8_t *name, uint8_t name_length)
 {
 	struct lean_dir_entry *de;
 	uint8_t entry_length = LEAN_DIR_ENTRY_LEN(name_length);
@@ -282,6 +282,7 @@ bool add_link(struct lean_sb_info *sbi, struct lean_ino_info *dir,
 		    - sizeof(struct lean_inode)
 		    + off
 		    + entry_length * sizeof(struct lean_dir_entry);
+	printf("dir->size = %lu lsec = %lu off = %u\n", dir->size, lsec, off);
 	inode->link_count++;
 
 	return false;
