@@ -104,6 +104,14 @@ static inline void lean_extra_put(struct lean_extra_info *ex)
 	kmem_cache_free(lean_extra_cache, ex);
 }
 
+#ifdef LEAN_TESTING
+extern __printf(2, 3)
+void lean_debug(struct super_block *s, const char *fmt, ...);
+#else
+static inline __printf(2, 3)
+void lean_debug(struct super_block *s, const char *fmt, ...) {}
+#endif
+
 /* super.c */
 struct inode *lean_inode_alloc(struct super_block *s);
 extern __printf(3, 4)
