@@ -11,7 +11,10 @@
 #define le32 __le32
 #define le64 __le64
 struct lean_bitmap;
+#define LEAN_STATIC_ASSERT(x) BUILD_BUG_ON(!(x))
+#define lean_assert(x) WARN_ON_ONCE(!(x))
 #else /* __KERNEL__ */
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -20,6 +23,9 @@ struct lean_bitmap;
 #define le32 uint32_t
 #define le64 uint64_t
 #define __packed __attribute__((__packed__))
+#define LEAN_STATIC_ASSERT(x) \
+	_Static_assert(x, "LEAN_STATIC_ASSERT failed: " #x)
+#define lean_assert assert
 #endif /* __KERNEL__ */
 
 #define LEAN_TESTING
@@ -167,7 +173,6 @@ struct lean_inode {
 		uint8_t xattr[LEAN_INODE_EXTRA];
 	} extra;
 } __packed;
-
 
 /*
  * Inode info in memory
@@ -346,6 +351,14 @@ static inline struct timespec64 lean_timespec64(int64_t time)
 	return ts;
 }
 #endif
+
+static inline void lean_static_checks(void)
+{
+	LEAN_STATIC_ASSERT(sizeof(struct lean_superblock) == LEAN_SEC);
+	LEAN_STATIC_ASSERT(sizeof(struct lean_indirect) == LEAN_SEC);
+	LEAN_STATIC_ASSERT(sizeof(struct lean_inode) == LEAN_SEC);
+	LEAN_STATIC_ASSERT(sizeof(struct lean_dir_entry) == 16);
+}
 
 /* common.c */
 enum lean_error {
