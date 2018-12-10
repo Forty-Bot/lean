@@ -109,38 +109,38 @@ void lean_info_to_superblock(const struct lean_sb_info *sbi,
 /*
  * Extract inode data from a disk structure
  */
-int lean_inode_to_info(const struct lean_inode *li, struct lean_ino_info *ii)
+int lean_inode_to_info(const struct lean_inode *raw, struct lean_ino_info *li)
 {
 	int ret = 0;
 	int i;
 	uint32_t cs;
 
-	cs = lean_checksum(li, sizeof(*li));
-	if (cs != tocpu32(li->checksum))
+	cs = lean_checksum(raw, sizeof(*raw));
+	if (cs != tocpu32(raw->checksum))
 		ret = -WRONG_CHECKSUM;
 
-	ii->extent_count = li->extent_count;
-	if (ii->extent_count > LEAN_INODE_EXTENTS)
-		ii->extent_count = LEAN_INODE_EXTENTS;
-	ii->indirect_count = tocpu32(li->indirect_count);
+	li->extent_count = raw->extent_count;
+	if (li->extent_count > LEAN_INODE_EXTENTS)
+		li->extent_count = LEAN_INODE_EXTENTS;
+	li->indirect_count = tocpu32(raw->indirect_count);
 #ifndef __KERNEL__
-	ii->link_count = tocpu32(li->link_count);
-	ii->uid = tocpu32(li->uid);
-	ii->gid = tocpu32(li->gid);
-	ii->attr = tocpu32(li->attr);
-	ii->size = tocpu64(li->size);
-	ii->sector_count = tocpu64(li->sector_count);
-	ii->time_access = tocpu64(li->time_access);
-	ii->time_status = tocpu64(li->time_status);
-	ii->time_modify = tocpu64(li->time_modify);
+	li->link_count = tocpu32(raw->link_count);
+	li->uid = tocpu32(raw->uid);
+	li->gid = tocpu32(raw->gid);
+	li->attr = tocpu32(raw->attr);
+	li->size = tocpu64(raw->size);
+	li->sector_count = tocpu64(raw->sector_count);
+	li->time_access = tocpu64(raw->time_access);
+	li->time_status = tocpu64(raw->time_status);
+	li->time_modify = tocpu64(raw->time_modify);
 #endif
-	ii->time_create = tocpu64(li->time_create);
-	ii->indirect_first = tocpu64(li->indirect_first);
-	ii->indirect_last = tocpu64(li->indirect_last);
-	ii->fork = tocpu64(li->fork);
+	li->time_create = tocpu64(raw->time_create);
+	li->indirect_first = tocpu64(raw->indirect_first);
+	li->indirect_last = tocpu64(raw->indirect_last);
+	li->fork = tocpu64(raw->fork);
 	for (i = 0; i < LEAN_INODE_EXTENTS; i++) {
-		ii->extent_starts[i] = tocpu64(li->extent_starts[i]);
-		ii->extent_sizes[i] = tocpu32(li->extent_sizes[i]);
+		li->extent_starts[i] = tocpu64(raw->extent_starts[i]);
+		li->extent_sizes[i] = tocpu32(raw->extent_sizes[i]);
 	}
 	return ret;
 }
@@ -150,63 +150,64 @@ int lean_inode_to_info(const struct lean_inode *li, struct lean_ino_info *ii)
  * Any reserved data *must* be pre-initialized
  * lean_extra_to_inode should be called beforehand, if applicable
  */
-void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li)
+void lean_info_to_inode(const struct lean_ino_info *li, struct lean_inode *raw)
 {
 	int i;
 
-	memcpy(li->magic, LEAN_MAGIC_INODE, sizeof(li->magic));
-	li->extent_count = ii->extent_count;
-	if (ii->extra)
-		li->extra_type = ii->extra->type;
+	memcpy(raw->magic, LEAN_MAGIC_INODE, sizeof(raw->magic));
+	raw->extent_count = li->extent_count;
+	if (li->extra)
+		raw->extra_type = li->extra->type;
 	else
-		li->extra_type = LXT_NONE;
-	if (li->extra_type == LXT_EXTENT
-	    && li->extent_count > LEAN_INODE_EXTENTS_MAX)
-			li->extent_count = LEAN_INODE_EXTENTS_MAX;
-	else if (li->extent_count > LEAN_INODE_EXTENTS)
-		li->extent_count = LEAN_INODE_EXTENTS;
-	li->indirect_count = tole32(ii->indirect_count);
+		raw->extra_type = LXT_NONE;
+	if (raw->extra_type == LXT_EXTENT
+	    && raw->extent_count > LEAN_INODE_EXTENTS_MAX)
+			raw->extent_count = LEAN_INODE_EXTENTS_MAX;
+	else if (raw->extent_count > LEAN_INODE_EXTENTS)
+		raw->extent_count = LEAN_INODE_EXTENTS;
+	raw->indirect_count = tole32(li->indirect_count);
 #ifndef __KERNEL__
-	li->link_count = tole32(ii->link_count);
-	li->uid = tole32(ii->uid);
-	li->gid = tole32(ii->gid);
-	li->attr = tole32(ii->attr);
-	li->size = tole64(ii->size);
-	li->sector_count = tole64(ii->sector_count);
-	li->time_access = tole64(ii->time_access);
-	li->time_status = tole64(ii->time_status);
-	li->time_modify = tole64(ii->time_modify);
+	raw->link_count = tole32(li->link_count);
+	raw->uid = tole32(li->uid);
+	raw->gid = tole32(li->gid);
+	raw->attr = tole32(li->attr);
+	raw->size = tole64(li->size);
+	raw->sector_count = tole64(li->sector_count);
+	raw->time_access = tole64(li->time_access);
+	raw->time_status = tole64(li->time_status);
+	raw->time_modify = tole64(li->time_modify);
 #endif
-	li->time_create = tole64(ii->time_create);
-	li->indirect_first = tole64(ii->indirect_first);
-	li->indirect_last = tole64(ii->indirect_last);
-	li->fork = tole64(ii->fork);
+	raw->time_create = tole64(li->time_create);
+	raw->indirect_first = tole64(li->indirect_first);
+	raw->indirect_last = tole64(li->indirect_last);
+	raw->fork = tole64(li->fork);
 	for (i = 0; i < LEAN_INODE_EXTENTS; i++) {
-		li->extent_starts[i] = tole64(ii->extent_starts[i]);
-		li->extent_sizes[i] = tole32(ii->extent_sizes[i]);
+		raw->extent_starts[i] = tole64(li->extent_starts[i]);
+		raw->extent_sizes[i] = tole32(li->extent_sizes[i]);
 	}
-	li->checksum = tole32(lean_checksum(li, sizeof(*li)));
+	raw->checksum = tole32(lean_checksum(raw, sizeof(*raw)));
 }
 
-int lean_inode_to_extra(const struct lean_inode *li, struct lean_extra_info *ex)
+int lean_inode_to_extra(const struct lean_inode *raw,
+			struct lean_extra_info *ex)
 {
 	unsigned i;
 
-	ex->type = li->extra_type;
+	ex->type = raw->extra_type;
 	switch(ex->type) {
 	case LXT_EXTENT:
 		for (i = 0; i < LEAN_INODE_EXTRA_EXTENTS; i++) {
 			ex->extent.starts[i]
-				= tocpu64(li->extra.extent.starts[i]);
+				= tocpu64(raw->extra.extent.starts[i]);
 			ex->extent.sizes[i]
-				= tocpu32(li->extra.extent.sizes[i]);
+				= tocpu32(raw->extra.extent.sizes[i]);
 		}
 		break;
 	case LXT_DATA:
-		memcpy(ex->data, li->extra.data, LEAN_INODE_EXTRA);
+		memcpy(ex->data, raw->extra.data, LEAN_INODE_EXTRA);
 		break;
 	case LXT_XATTR:
-		memcpy(ex->xattr, li->extra.xattr, LEAN_INODE_EXTRA);
+		memcpy(ex->xattr, raw->extra.xattr, LEAN_INODE_EXTRA);
 		break;
 	case LXT_NONE:
 		break;
@@ -216,25 +217,26 @@ int lean_inode_to_extra(const struct lean_inode *li, struct lean_extra_info *ex)
 	return 0;
 }
 
-void lean_extra_to_inode(const struct lean_extra_info *ex, struct lean_inode *li)
+void lean_extra_to_inode(const struct lean_extra_info *ex,
+			 struct lean_inode *raw)
 {
 	unsigned i;
 
-	li->extra_type = ex->type;
+	raw->extra_type = ex->type;
 	switch(ex->type) {
 	case LXT_EXTENT:
 		for (i = 0; i < LEAN_INODE_EXTRA_EXTENTS; i++) {
-			li->extra.extent.starts[i] =
+			raw->extra.extent.starts[i] =
 				tocpu64(ex->extent.starts[i]);
-			li->extra.extent.sizes[i] =
+			raw->extra.extent.sizes[i] =
 				tocpu32(ex->extent.sizes[i]);
 		}
 		break;
 	case LXT_DATA:
-		memcpy(li->extra.data, ex->data, LEAN_INODE_EXTRA);
+		memcpy(raw->extra.data, ex->data, LEAN_INODE_EXTRA);
 		break;
 	case LXT_XATTR:
-		memcpy(li->extra.xattr, ex->xattr, LEAN_INODE_EXTRA);
+		memcpy(raw->extra.xattr, ex->xattr, LEAN_INODE_EXTRA);
 		break;
 	case LXT_NONE:
 	default:

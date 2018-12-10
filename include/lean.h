@@ -355,10 +355,12 @@ int lean_superblock_to_info(const struct lean_superblock *sb,
 			    struct lean_sb_info *sbi);
 void lean_info_to_superblock(const struct lean_sb_info *sbi,
 			     struct lean_superblock *sb);
-int lean_inode_to_info(const struct lean_inode *li, struct lean_ino_info *ii);
-void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li);
-int lean_inode_to_extra(const struct lean_inode *li, struct lean_extra_info *ex);
-void lean_extra_to_inode(const struct lean_extra_info *ex, struct lean_inode *li);
+int lean_inode_to_info(const struct lean_inode *raw, struct lean_ino_info *li);
+void lean_info_to_inode(const struct lean_ino_info *li, struct lean_inode *raw);
+int lean_inode_to_extra(const struct lean_inode *raw,
+			struct lean_extra_info *ex);
+void lean_extra_to_inode(const struct lean_extra_info *ex,
+			 struct lean_inode *raw);
 uint64_t lean_find_sector(struct lean_ino_info *li, uint64_t sec,
 			  uint32_t *count);
 
