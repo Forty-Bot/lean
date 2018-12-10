@@ -11,11 +11,12 @@
 #define _GNU_SOURCE
 #undef _FEATURES_H
 #include <features.h>
-#if !__GLIBC_PREREQ(2,28)
-#define WANT_STATX
-#endif
 #else
 #define WANT_COPY_FILE_RANGE
+#endif
+
+#if __GLIBC__ && !__GLIBC_PREREQ(2,28)
+#define WANT_STATX
 #endif
 
 #include "lean.h"
