@@ -25,7 +25,7 @@ struct lean_bitmap;
 #define LEAN_TESTING
 
 #define LEAN_VERSION_MAJOR 0x00
-#define LEAN_VERSION_MINOR 0x06
+#define LEAN_VERSION_MINOR 0x07
 
 static const uint8_t LEAN_MAGIC_SUPERBLOCK[4] = { 'L', 'E', 'A', 'N' };
 static const uint8_t LEAN_MAGIC_INDIRECT[4] = { 'I', 'N', 'D', 'X' };
