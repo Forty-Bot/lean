@@ -19,7 +19,7 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 	uint32_t count = bh_result->b_size >> LEAN_SEC_SHIFT;
 
 	sec += 1; /* Skip inode */
-	lean_msg(inode->i_sb, KERN_DEBUG, "mapping inode %lu sector %lu, up to %u",
+	lean_debug(inode->i_sb, "mapping inode %lu sector %lu, up to %u",
 		 inode->i_ino, sec, count);
 
 	down_read(&li->alloc_lock);
@@ -47,6 +47,9 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 			goto found;
 
 		ret = lean_extend_inode(inode, &sector, &count);
+		lean_debug(inode->i_sb,
+			   "inode %lu extended with %u sectors at %lu",
+			   inode->i_ino, count, sec);
 		if (ret) {
 			up_write(&li->alloc_lock);
 			return ret;
@@ -57,7 +60,7 @@ found:
 		downgrade_write(&li->alloc_lock);
 	}
 
-	lean_msg(inode->i_sb, KERN_DEBUG, "mapping %u sector(s) at sector %llu",
+	lean_debug(inode->i_sb, "mapping %u sector(s) at sector %llu",
 		 count, sector);
 	map_bh(bh_result, inode->i_sb, sector);
 	bh_result->b_size = count << LEAN_SEC_SHIFT;
@@ -83,12 +86,19 @@ static int lean_readpages(struct file *file, struct address_space *mapping,
 
 static int lean_writepage(struct page *page, struct writeback_control *wbc)
 {
-	return mpage_writepage(page, lean_get_block, wbc);
+	struct inode *inode = page->mapping->host;
+	lean_debug(inode->i_sb, "Writing back page %lu for inode %lu",
+		   page->index, inode->i_ino);
+	return nobh_writepage(page, lean_get_block, wbc);
 }
 
 static int lean_writepages(struct address_space *mapping,
 			   struct writeback_control *wbc)
 {
+	struct inode *inode = mapping->host;
+	lean_debug(inode->i_sb,
+		   "Writing back %ld pages starting at %lld for inode %lu",
+		   wbc->nr_to_write, wbc->range_start, inode->i_ino);
 	return mpage_writepages(mapping, wbc, lean_get_block);
 }
 
@@ -97,7 +107,8 @@ static int lean_writepages(struct address_space *mapping,
  */
 int lean_set_page_dirty(struct page *page)
 {
-	pr_info("setting page %p dirty with flags %pGp", page, &page->flags);
+	lean_debug(NULL, "setting page %p dirty with flags %pGp",
+		page, &page->flags);
 	WARN_ON_ONCE(!PageLocked(page) && !PageDirty(page));
 	return __set_page_dirty_nobuffers(page);
 }
@@ -147,6 +158,8 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 	}
 
 	if (lean_inode_to_info(raw, li)) {
+		lean_msg(s, KERN_WARNING,
+			 "inode %lu has wrong checksum", inode->i_ino);
 		ret = -EUCLEAN;
 		goto bh_bad_inode;
 	}
@@ -159,6 +172,9 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 		}
 
 		if (lean_inode_to_extra(raw, li->extra)) {
+			lean_msg(s, KERN_WARNING,
+				 "inode %lu has invalid extra data type",
+				 inode->i_ino);
 			ret = -EUCLEAN;
 			goto bh_bad_inode;
 		}
@@ -171,7 +187,9 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 	    || ((!li->extra || li->extra->type != LXT_EXTENT)
 		&& li->extent_count > LEAN_INODE_EXTENTS)
 	    || li->extent_count > LEAN_INODE_EXTENTS_MAX) {
-		lean_msg(s, KERN_WARNING, "corrupt inode %lu", inode->i_ino);
+		lean_msg(s, KERN_WARNING,
+			 "inode %lu has invalid extent count %u",
+			 inode->i_ino, li->extent_count);
 		ret = -EUCLEAN;
 		goto bad_inode;
 	}
