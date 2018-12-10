@@ -126,6 +126,11 @@ struct lean_indirect {
  * Number of extents in an inode
  */
 #define LEAN_INODE_EXTENTS 6
+/* 176 == sizeof(struct lean_inode) without extra */
+#define LEAN_INODE_EXTRA (LEAN_SEC - 176) /* == 336 */
+#define LEAN_INODE_EXTRA_EXTENTS (LEAN_INODE_EXTRA \
+				  / (sizeof(le64) + sizeof(le32))) /* == 28 */
+#define LEAN_INODE_EXTENTS_MAX (LEAN_INODE_EXTENTS + LEAN_INODE_EXTRA_EXTENTS)
 
 /*
  * Structure containing fundamental metadata of a file.
@@ -248,6 +253,31 @@ enum lean_inode_attr {
 #define LIA_ISFMT_REG(a) (((a) & LIA_FMT_REG) == LIA_FMT_REG)
 #define LIA_ISFMT_DIR(a) (((a) & LIA_FMT_DIR) == LIA_FMT_DIR)
 #define LIA_ISFMT_SYM(a) (((a) & LIA_FMT_SYM) == LIA_FMT_SYM)
+
+/*
+ * Type of data stored in extra
+ */
+enum lean_extra_type {
+	LXT_NONE = 0, /* No data stored */
+	LXT_EXTENT = 1, /* Used for additional extents */
+	LXT_DATA = 2, /* Entire file stored in extra */
+	LXT_XATTR = 3 /* Used for inline xattrs */
+};
+
+/*
+ * Extra inode info in memory
+ */
+struct lean_extra_info {
+	union {
+		struct {
+			uint64_t starts[LEAN_INODE_EXTRA_EXTENTS];
+			uint32_t sizes[LEAN_INODE_EXTRA_EXTENTS];
+		} extent;
+		uint8_t data[LEAN_INODE_EXTRA];
+		uint8_t xattr[LEAN_INODE_EXTRA];
+	};
+	uint8_t type;
+};
 
 /*
  * A 16-byte entry for a file in a directory

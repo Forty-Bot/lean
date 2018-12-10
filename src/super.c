@@ -243,6 +243,27 @@ static void lean_destroy_inodecache(void)
 	kmem_cache_destroy(lean_inode_cache);
 }
 
+struct kmem_cache *lean_extra_cache;
+
+static int __init lean_init_extracache(void)
+{
+	lean_extra_cache = kmem_cache_create("lean_extra_cache",
+					     sizeof(struct lean_extra_info), 0,
+					     (SLAB_RECLAIM_ACCOUNT |
+					      SLAB_MEM_SPREAD |
+					      SLAB_ACCOUNT),
+					     NULL);
+	if (!lean_extra_cache)
+		return -ENOMEM;
+	return 0;
+}
+
+static void lean_destroy_extracache(void)
+{
+	rcu_barrier();
+	kmem_cache_destroy(lean_extra_cache);
+}
+
 static struct super_operations const lean_super_ops = {
 	.alloc_inode = lean_inode_alloc,
 	.destroy_inode = lean_inode_free,
@@ -433,22 +454,30 @@ static struct file_system_type lean_fs_type = {
 static int __init lean_init(void)
 {
 	int err = lean_init_inodecache();
-
 	if (err)
 		return err;
 
+	err = lean_init_extracache();
+	if (err)
+		goto cache_fail;
+
 	err = register_filesystem(&lean_fs_type);
-	if (err) {
-		lean_destroy_inodecache();
-		return err;
-	}
+	if (err)
+		goto register_fail;
+
 	return 0;
+register_fail:
+	lean_destroy_extracache();
+cache_fail:
+	lean_destroy_inodecache();
+	return err;
 }
 
 static void __exit lean_exit(void)
 {
 	unregister_filesystem(&lean_fs_type);
 	lean_destroy_inodecache();
+	lean_destroy_extracache();
 }
 
 module_init(lean_init);

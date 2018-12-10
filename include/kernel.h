@@ -4,6 +4,7 @@
 #include "lean.h"
 
 #include <linux/fs.h>
+#include <linux/slab.h>
 #include <linux/version.h>
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
@@ -90,6 +91,18 @@ static inline struct lean_bitmap *LEAN_BITMAP(struct lean_sb_info *sbi,
 }
 
 #define LEAN_ROUND_PAGE(s) (((s) + ~PAGE_MASK) & PAGE_MASK)
+
+extern struct kmem_cache *lean_extra_cache;
+
+static inline struct lean_extra_info *lean_extra_get(void)
+{
+	return kmem_cache_alloc(lean_extra_cache, GFP_KERNEL);
+}
+
+static inline void lean_extra_put(struct lean_extra_info *ex)
+{
+	kmem_cache_free(lean_extra_cache, ex);
+}
 
 /* super.c */
 struct inode *lean_inode_alloc(struct super_block *s);
