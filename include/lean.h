@@ -348,16 +348,18 @@ static inline struct timespec64 lean_timespec64(int64_t time)
 #endif
 
 /* common.c */
-#define WRONG_CHECKSUM 1
-#define INVALID_TYPE 2
+enum lean_error {
+	LEAN_WRONG_CHECKSUM = 1,
+	LEAN_INVALID_TYPE = 2
+};
 uint32_t lean_checksum(const void *data, size_t size);
-int lean_superblock_to_info(const struct lean_superblock *sb,
+enum lean_error lean_superblock_to_info(const struct lean_superblock *sb,
 			    struct lean_sb_info *sbi);
 void lean_info_to_superblock(const struct lean_sb_info *sbi,
 			     struct lean_superblock *sb);
-int lean_inode_to_info(const struct lean_inode *raw, struct lean_ino_info *li);
+enum lean_error lean_inode_to_info(const struct lean_inode *raw, struct lean_ino_info *li);
 void lean_info_to_inode(const struct lean_ino_info *li, struct lean_inode *raw);
-int lean_inode_to_extra(const struct lean_inode *raw,
+enum lean_error lean_inode_to_extra(const struct lean_inode *raw,
 			struct lean_extra_info *ex);
 void lean_extra_to_inode(const struct lean_extra_info *ex,
 			 struct lean_inode *raw);

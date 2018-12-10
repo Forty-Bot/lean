@@ -46,7 +46,7 @@ uint32_t lean_checksum(const void *data, size_t size)
 /*
  * Extract superblock info from a superblock in disk format
  */
-int lean_superblock_to_info(const struct lean_superblock *sb,
+enum lean_error lean_superblock_to_info(const struct lean_superblock *sb,
 			    struct lean_sb_info *sbi)
 {
 	int ret = 0;
@@ -57,7 +57,7 @@ int lean_superblock_to_info(const struct lean_superblock *sb,
 	 */
 	cs = lean_checksum(sb, sizeof(*sb));
 	if (cs != tocpu32(sb->checksum))
-		ret = -WRONG_CHECKSUM;
+		ret = -LEAN_WRONG_CHECKSUM;
 
 	sbi->prealloc = sb->prealloc + 1;
 	sbi->log2_band_sectors = sb->log2_band_sectors;
@@ -109,7 +109,8 @@ void lean_info_to_superblock(const struct lean_sb_info *sbi,
 /*
  * Extract inode data from a disk structure
  */
-int lean_inode_to_info(const struct lean_inode *raw, struct lean_ino_info *li)
+enum lean_error lean_inode_to_info(const struct lean_inode *raw,
+				   struct lean_ino_info *li)
 {
 	int ret = 0;
 	int i;
@@ -117,7 +118,7 @@ int lean_inode_to_info(const struct lean_inode *raw, struct lean_ino_info *li)
 
 	cs = lean_checksum(raw, sizeof(*raw));
 	if (cs != tocpu32(raw->checksum))
-		ret = -WRONG_CHECKSUM;
+		ret = -LEAN_WRONG_CHECKSUM;
 
 	li->extent_count = raw->extent_count;
 	if (li->extent_count > LEAN_INODE_EXTENTS)
@@ -188,7 +189,7 @@ void lean_info_to_inode(const struct lean_ino_info *li, struct lean_inode *raw)
 	raw->checksum = tole32(lean_checksum(raw, sizeof(*raw)));
 }
 
-int lean_inode_to_extra(const struct lean_inode *raw,
+enum lean_error lean_inode_to_extra(const struct lean_inode *raw,
 			struct lean_extra_info *ex)
 {
 	unsigned i;
@@ -212,7 +213,7 @@ int lean_inode_to_extra(const struct lean_inode *raw,
 	case LXT_NONE:
 		break;
 	default:
-		return -INVALID_TYPE;
+		return -LEAN_INVALID_TYPE;
 	}
 	return 0;
 }
