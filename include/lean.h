@@ -220,7 +220,7 @@ enum lean_file_type {
 /*
  * Enum containing all attributes of an inode
  * The bits are allocated as such:
- * 0xTTTXXXXXXXXXFFFFFFFFPPPPPPPPPPPP
+ * 0xTTTXXXXXXXXXXFFFFFFFPPPPPPPPPPPP
  * Where P == Posix permissions
  *       F == Filesystem-specific attributes
  *       T == Filetype attributes
@@ -251,7 +251,6 @@ enum lean_inode_attr {
 	LIA_PREALLOC = 1 << 18, /* Keep preallocated sectors beyond inode.size
 				 * after file is closed
 				 */
-	LIA_INLINE = 1 << 19, /* Inline extended attributes in first sector */
 	/* Filetype attributes */
 	LIA_FMT_REG = LFT_REG << LIA_FMT_SHIFT, /* Regular file */
 	LIA_FMT_DIR = LFT_DIR << LIA_FMT_SHIFT, /* Directory */
