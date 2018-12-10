@@ -404,7 +404,7 @@ static int lean_fill_super(struct super_block *s, void *data, int silent)
 	root = lean_iget(s, sbi->root);
 	if (IS_ERR(root)) {
 		ret = PTR_ERR(root);
-		lean_msg(s, KERN_ERR, "error reading root inode:");
+		lean_msg(s, KERN_ERR, "error reading root inode");
 		goto bitmap_failure;
 	}
 	if (!S_ISDIR(root->i_mode) || !root->i_blocks || !root->i_size) {

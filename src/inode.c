@@ -18,8 +18,9 @@ static int lean_get_block(struct inode *inode, sector_t sec,
 	uint64_t sector;
 	uint32_t count = bh_result->b_size >> LEAN_SEC_SHIFT;
 
-	lean_msg(inode->i_sb, KERN_DEBUG, "mapping inode %lu sector %lu",
-		 inode->i_ino, sec);
+	sec += 1; /* Skip inode */
+	lean_msg(inode->i_sb, KERN_DEBUG, "mapping inode %lu sector %lu, up to %u",
+		 inode->i_ino, sec, count);
 
 	down_read(&li->alloc_lock);
 	sector = lean_find_sector(li, sec, &count);
@@ -139,6 +140,8 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 
 	raw = (struct lean_inode *)bh->b_data;
 	if (memcmp(raw->magic, LEAN_MAGIC_INODE, sizeof(raw->magic))) {
+		lean_msg(s, KERN_WARNING,
+			 "inode %lu has wrong magic number", inode->i_ino);
 		ret = -EUCLEAN;
 		goto bh_bad_inode;
 	}

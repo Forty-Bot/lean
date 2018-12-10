@@ -183,7 +183,7 @@ int populate_fs(struct lean_sb_info *sbi,
 
 retry:
 		switch (f->fts_info) {
-		/* A file for which no stat(2) information was available. 
+		/* A file for which no stat(2) information was available.
 		 * We didn't ask for this... */
 		case FTS_NS:
 			/* what? */
@@ -232,7 +232,7 @@ retry:
 		/* A regular file. */
 		case FTS_F:
 			/* hmm... */
-		/* A  file  for  which  no stat(2) information was requested. 
+		/* A file for which no stat(2) information was requested. 
 		 * We should only get files of this type */
 		case FTS_NSOK: {
 			struct lean_ino_info *li = create_file(sbi, f);

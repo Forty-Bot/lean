@@ -9,7 +9,7 @@
 /* Heavily influenced by fs/ext2/dir.c */
 static unsigned int lean_last_byte(struct inode *inode, unsigned long page_nr)
 {
-	unsigned int last_byte = inode->i_size + sizeof(struct lean_inode);
+	unsigned int last_byte = inode->i_size;
 
 	last_byte -= page_nr << PAGE_SHIFT;
 	if (last_byte > PAGE_SIZE)
@@ -50,9 +50,6 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 	unsigned int off = ctx->pos + PAGE_SIZE;
 	unsigned long n = ctx->pos >> PAGE_SHIFT;
 	unsigned long npages = dir_pages(inode);
-	/* Skip the inode if the initial position is zero */
-	if (!ctx->pos)
-		off += sizeof(struct lean_inode);
 
 	for (; !ret && n < npages; n++) {
 		unsigned char *kaddr;

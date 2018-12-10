@@ -6,14 +6,11 @@
 
 static ssize_t lean_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
-	/* Skip past the inode contained within the first sector */
-	iocb->ki_pos += sizeof(struct lean_inode);
 	return generic_file_read_iter(iocb, iter);
 }
 
 static ssize_t lean_write_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
-	iocb->ki_pos += sizeof(struct lean_inode);
 	return generic_file_write_iter(iocb, iter);
 }
 
