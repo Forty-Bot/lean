@@ -59,6 +59,7 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 
 		off -= PAGE_SIZE;
 
+		lean_debug(s, "readdir page_nr = %lu", n);
 		if (IS_ERR(page)) {
 			lean_msg(s, KERN_ERR, "bad page in inode %lu",
 				 inode->i_ino);
@@ -72,6 +73,9 @@ static int lean_readdir(struct inode *inode, struct dir_context *ctx,
 		de = (struct lean_dir_entry *)(kaddr + off);
 		while (off <= lean_last_byte(inode, n)
 			- sizeof(struct lean_dir_entry)) {
+			lean_debug(s, "readdir off = %u last = %u",
+				   off, lean_last_byte(inode, n));
+			lean_debug(s, "de = %16ph", de);
 			/* Sanity checks */
 			if (unlikely(!de->entry_length)) {
 				lean_msg(s, KERN_ERR,
@@ -222,6 +226,10 @@ static int lean_add_link_iter(struct dir_context *ctx, char *name,
 		(name - offsetof(struct lean_dir_entry, name));
 	uint8_t size;
 
+	lean_debug(NULL,
+		   "off = %llu de->type = %u de->entry_length %u data->entry_length %u data->preceding = %u",
+		   off, de->type, de->entry_length,
+		   data->entry_length, data->preceding);
 	/*
 	 * If there's not enough space for our entry in this sector, or this
 	 * entry isn't empty, skip this entry.
@@ -230,12 +238,14 @@ static int lean_add_link_iter(struct dir_context *ctx, char *name,
 	    data->entry_length * sizeof(struct lean_dir_entry) +
 	    (off & LEAN_SEC_MASK) -
 	    data->preceding * sizeof(struct lean_dir_entry) > LEAN_SEC) {
+		lean_debug(NULL, "no space/dentry used");
 		data->preceding = 0;
 		return 0;
 	}
 	start = de - data->preceding;
 	size = de->entry_length + data->preceding;
 	if (data->entry_length > size) {
+		lean_debug(NULL, "not enough with preceding");
 		data->preceding = size;
 		return 0;
 	} else if (data->entry_length < size) {
@@ -300,10 +310,16 @@ static int lean_add_link(struct dentry *de, struct inode *inode)
 		.err = 1,
 	};
 
+	lean_debug(inode->i_sb,
+		   "add_link data.entry_length = %u data.name_length = %u data.type %u",
+		   data.entry_length, data.name_length, data.type);
 	err = lean_readdir(dir, &data.ctx, true, true);
 	if (err)
 		return err;
 
+	lean_debug(inode->i_sb,
+		   "add_link data.ctx.pos = %llu data.preceding = %u",
+		   data.ctx.pos, data.preceding);
 	if (data.err == 1) {
 		struct page *page;
 		struct lean_dir_entry *new;
@@ -323,6 +339,9 @@ static int lean_add_link(struct dentry *de, struct inode *inode)
 			return PTR_ERR(page);
 		lock_page(page);
 
+		lean_debug(inode->i_sb, 
+			   "failed to find a free dentry, trying to extend directory off = %llu",
+			   off);
 		data.ctx.pos = off;
 		data.preceding = 0;
 		new = page_address(page) + (off & PAGE_MASK);
@@ -333,9 +352,9 @@ static int lean_add_link(struct dentry *de, struct inode *inode)
 		err = lean_add_link_iter(&data.ctx, new->name, 0,
 					 off, inode->i_ino, DT_UNKNOWN);
 		if (!err || data.err) {
-			lean_msg(inode->i_sb, KERN_DEBUG,
-				 "failed to extend directory err = %d data.err = %d",
-				 err, data.err);
+			lean_msg(inode->i_sb, KERN_WARNING,
+				   "failed to extend directory err = %d data.err = %d",
+				   err, data.err);
 			unlock_page(page);
 			lean_put_page(page);
 			if (!err)
@@ -343,8 +362,7 @@ static int lean_add_link(struct dentry *de, struct inode *inode)
 		} else {
 			lean_put_page(page);
 		}
-		lean_msg(inode->i_sb, KERN_DEBUG,
-			 "created dir_entry... %16ph", new);
+		lean_debug(inode->i_sb, "created dir_entry... %16ph", new);
 	}
 
 	return data.err;
@@ -356,12 +374,12 @@ static int lean_create(struct inode *dir, struct dentry *dentry,
 	int err;
 	struct inode *inode;
 
-	lean_msg(dir->i_sb, KERN_DEBUG, "trying to allocate new inode...");
+	lean_debug(dir->i_sb, "trying to allocate new inode...");
 	inode = lean_new_inode(dir, mode);
 	if (IS_ERR(inode))
 		return PTR_ERR(inode);
 
-	lean_msg(dir->i_sb, KERN_DEBUG, "got inode, linking to dir...");
+	lean_debug(dir->i_sb, "got inode, linking to dir...");
 	err = lean_add_link(dentry, inode);
 	if (err) {
 		inode_dec_link_count(inode);
