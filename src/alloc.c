@@ -280,11 +280,11 @@ void lean_bitmap_cache_destroy(struct super_block *s)
  */
 uint64_t lean_count_free_sectors(struct super_block *s)
 {
-	int i;
 	struct lean_sb_info *sbi = s->s_fs_info;
-	uint64_t count = 0;
-
 #ifdef LEAN_TESTING
+	int i;
+	uint64_t count = 0;
+	
 	for (i = 0; i < sbi->band_count; i++) {
 		struct lean_bitmap *bitmap = lean_bitmap_get(s, i);
 
@@ -369,7 +369,7 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 	struct page *page = data->bitmap->pages[page_nr];
 	int tmp = data->off;
 
-	pr_info("addr = %p size = %u, off = %u", addr, size, tmp);
+	lean_debug(NULL, "addr = %p size = %u, off = %u", addr, size, tmp);
 
 	/* If we have an offset, go straight to the greedy bitwise search */
 	if (tmp)
@@ -379,7 +379,8 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 		switch (state) {
 		case (LTAS_BYTEWISE):
 			ptr = (char *)memscan(addr + (tmp >> 3), 0, size);
-			pr_info("Searching for a free byte... got %p", ptr);
+			lean_debug(NULL, "Searching for a free byte... got %p",
+				   ptr);
 			if (ptr < addr + size) {
 				tmp = (ptr - addr) * 8;
 				state = LTAS_FOUND_BYTE;
@@ -392,7 +393,8 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 		case (LTAS_BITWISE):
 			tmp = find_next_zero_bit((unsigned long *)addr,
 						 size * 8, tmp);
-			pr_info("Searching for a free bit... got %d", tmp);
+			lean_debug(NULL, "Searching for a free bit... got %d",
+				   tmp);
 			if (tmp < size * 8) {
 				if (state == LTAS_GREEDY)
 					state = LTAS_FOUND_GREEDY;
@@ -433,14 +435,15 @@ static int lean_try_alloc_iter(char *addr, uint32_t size, int page_nr,
 	retries = 0;
 	do {
 		if (retries)
-			pr_info("writing bitmap page: retry %d", retries);
+			lean_debug(NULL, "writing bitmap page: retry %d",
+				   retries);
 		data->err = lean_write_page(page, data->sync);
 		retries++;
 	} while (data->err == -EAGAIN && retries <= 4);
 
 	if (data->err) {
-		pr_warn("could not write bitmap page");
-		pr_info("i = %d tmp = %d addr = %p", i, tmp, addr);
+		pr_warn("lean: could not write bitmap page: i = %d tmp = %d addr = %p",
+			i, tmp, addr);
 		for (; i > 0; i--)
 			WARN_ON_ONCE(!lean_clear_bit_atomic(&data->bitmap->lock,
 							    tmp + i - 1, addr));
@@ -547,9 +550,9 @@ uint64_t lean_new_sectors(struct super_block *s, uint64_t goal, uint32_t *count,
 			continue;
 		}
 
-		lean_msg(s, KERN_DEBUG,
-			 "trying to allocate %u blocks in band %llu with goal block %u",
-			 *count, band, band_tgt);
+		lean_debug(s,
+			   "trying to allocate %u blocks in band %llu with goal block %u",
+			   *count, band, band_tgt);
 		alloc = lean_try_alloc(s, bitmap, band_tgt, count, errp);
 		if (alloc)
 			break;
@@ -615,7 +618,7 @@ uint64_t lean_new_zeroed_sectors(struct super_block *s, uint64_t goal,
 	clean_bdev_aliases(s->s_bdev, sector, *count);
 	*errp = blkdev_issue_zeroout(s->s_bdev, sector, *count, GFP_NOFS, 0);
 	if (*errp) {
-		lean_msg(s, KERN_INFO, "failed to zero sectors");
+		lean_msg(s, KERN_WARNING, "failed to zero sectors");
 		lean_free_sectors(s, sector, *count);
 	}
 	return sector;
@@ -653,7 +656,7 @@ static int lean_free_sectors_iter(char *addr, uint32_t len, int page_nr,
 	set_page_dirty(page);
 	if (lean_write_page(page, data->sync)) {
 		unlock_page(page);
-		pr_warn("could not write bitmap page");
+		pr_warn("lean: could not write bitmap page");
 	}
 
 	data->start -= len * 8;
