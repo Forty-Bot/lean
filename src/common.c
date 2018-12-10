@@ -148,6 +148,7 @@ int lean_inode_to_info(const struct lean_inode *li, struct lean_ino_info *ii)
 /*
  * Convert inode info to disk format
  * Any reserved data *must* be pre-initialized
+ * lean_extra_to_inode should be called beforehand, if applicable
  */
 void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li)
 {
@@ -155,7 +156,14 @@ void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li)
 
 	memcpy(li->magic, LEAN_MAGIC_INODE, sizeof(li->magic));
 	li->extent_count = ii->extent_count;
-	if (li->extent_count > LEAN_INODE_EXTENTS)
+	if (ii->extra)
+		li->extra_type = ii->extra->type;
+	else
+		li->extra_type = LXT_NONE;
+	if (li->extra_type == LXT_EXTENT
+	    && li->extent_count > LEAN_INODE_EXTENTS_MAX)
+			li->extent_count = LEAN_INODE_EXTENTS_MAX;
+	else if (li->extent_count > LEAN_INODE_EXTENTS)
 		li->extent_count = LEAN_INODE_EXTENTS;
 	li->indirect_count = tole32(ii->indirect_count);
 #ifndef __KERNEL__
@@ -178,6 +186,60 @@ void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li)
 		li->extent_sizes[i] = tole32(ii->extent_sizes[i]);
 	}
 	li->checksum = tole32(lean_checksum(li, sizeof(*li)));
+}
+
+int lean_inode_to_extra(const struct lean_inode *li, struct lean_extra_info *ex)
+{
+	unsigned i;
+
+	ex->type = li->extra_type;
+	switch(ex->type) {
+	case LXT_EXTENT:
+		for (i = 0; i < LEAN_INODE_EXTRA_EXTENTS; i++) {
+			ex->extent.starts[i]
+				= tocpu64(li->extra.extent.starts[i]);
+			ex->extent.sizes[i]
+				= tocpu32(li->extra.extent.sizes[i]);
+		}
+		break;
+	case LXT_DATA:
+		memcpy(ex->data, li->extra.data, LEAN_INODE_EXTRA);
+		break;
+	case LXT_XATTR:
+		memcpy(ex->xattr, li->extra.xattr, LEAN_INODE_EXTRA);
+		break;
+	case LXT_NONE:
+		break;
+	default:
+		return -INVALID_TYPE;
+	}
+	return 0;
+}
+
+void lean_extra_to_inode(const struct lean_extra_info *ex, struct lean_inode *li)
+{
+	unsigned i;
+
+	li->extra_type = ex->type;
+	switch(ex->type) {
+	case LXT_EXTENT:
+		for (i = 0; i < LEAN_INODE_EXTRA_EXTENTS; i++) {
+			li->extra.extent.starts[i] =
+				tocpu64(ex->extent.starts[i]);
+			li->extra.extent.sizes[i] =
+				tocpu32(ex->extent.sizes[i]);
+		}
+		break;
+	case LXT_DATA:
+		memcpy(li->extra.data, ex->data, LEAN_INODE_EXTRA);
+		break;
+	case LXT_XATTR:
+		memcpy(li->extra.xattr, ex->xattr, LEAN_INODE_EXTRA);
+		break;
+	case LXT_NONE:
+	default:
+		break;
+	}
 }
 
 /*

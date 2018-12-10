@@ -339,6 +339,7 @@ static inline struct timespec64 lean_timespec64(int64_t time)
 
 /* common.c */
 #define WRONG_CHECKSUM 1
+#define INVALID_TYPE 2
 uint32_t lean_checksum(const void *data, size_t size);
 int lean_superblock_to_info(const struct lean_superblock *sb,
 			    struct lean_sb_info *sbi);
@@ -346,6 +347,8 @@ void lean_info_to_superblock(const struct lean_sb_info *sbi,
 			     struct lean_superblock *sb);
 int lean_inode_to_info(const struct lean_inode *li, struct lean_ino_info *ii);
 void lean_info_to_inode(const struct lean_ino_info *ii, struct lean_inode *li);
+int lean_inode_to_extra(const struct lean_inode *li, struct lean_extra_info *ex);
+void lean_extra_to_inode(const struct lean_extra_info *ex, struct lean_inode *li);
 uint64_t lean_find_sector(struct lean_ino_info *li, uint64_t sec,
 			  uint32_t *count);
 
