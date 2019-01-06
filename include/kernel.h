@@ -138,6 +138,8 @@ extern __printf(3, 4)
 void lean_msg(struct super_block *s, const char *prefix, const char *fmt, ...);
 
 /* inode.c */
+int lean_get_block(struct inode *inode, sector_t sec,
+		   struct buffer_head *bh_result, int create);
 struct inode *lean_iget(struct super_block *s, uint64_t ino);
 int lean_write_inode(struct inode *inode, struct writeback_control *wbc);
 int lean_setattr(struct dentry *de, struct iattr *attr);

@@ -1,6 +1,7 @@
 #include "kernel.h"
 #include "lean.h"
 
+#include <linux/buffer_head.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -224,9 +225,10 @@ static int lean_add_link_iter(struct dir_context *ctx, char *name,
 	struct inode *dir;
 	struct lean_add_link_data *data = (struct lean_add_link_data *)ctx;
 	/* Can't use container_of because we have an array literal */
-	struct lean_dir_entry *start, *de =
-		(struct lean_dir_entry *)
+	struct lean_dir_entry *start;
+	struct lean_dir_entry *de = (struct lean_dir_entry *)
 		(name - offsetof(struct lean_dir_entry, name));
+	uint16_t size_bytes;
 	uint8_t size;
 
 	lean_debug(NULL,
@@ -245,13 +247,21 @@ static int lean_add_link_iter(struct dir_context *ctx, char *name,
 		data->preceding = 0;
 		return 0;
 	}
-	start = de - data->preceding;
+	start = de - (data->preceding * sizeof(struct lean_dir_entry));
 	size = de->entry_length + data->preceding;
+	size_bytes = size * sizeof(struct lean_dir_entry);
 	if (data->entry_length > size) {
 		lean_debug(NULL, "not enough with preceding");
 		data->preceding = size;
 		return 0;
-	} else if (data->entry_length < size) {
+	}
+
+	page = kmap_to_page(name);
+	lean_debug(page->mapping->host->i_sb,
+		   "beginning write at %lld with length %u for page %lu of inode %lu",
+		   off, size_bytes, page->index, page->mapping->host->i_ino);
+	__block_write_begin(page, off, size_bytes, lean_get_block);
+	if (data->entry_length < size) {
 	/*
 	 * Set up the following empty dir entry; we only need to do this if we
 	 * have extra space following our new entry.
@@ -270,19 +280,19 @@ static int lean_add_link_iter(struct dir_context *ctx, char *name,
 	start->name_length = cpu_to_le16(data->name_length);
 	memcpy(start->name, data->name, data->name_length);
 
-	page = kmap_to_page(name);
 	dir = page->mapping->host;
 	length = off - (de->entry_length * sizeof(struct lean_dir_entry));
 	/* Check to see if we went over the end of the directory */
-	if (length > dir->i_size) {
+	if (length > i_size_read(dir))
 		i_size_write(dir, length);
-		mark_inode_dirty(dir);
-	}
 
+	inode_inc_iversion(dir);
+	SetPageUptodate(page);
+	set_page_dirty(page);
+	/*block_write_end(NULL, page->mapping, off, size_bytes, size_bytes, page, NULL);*/
 	dir->i_mtime = dir->i_ctime = current_time(dir);
 	mark_inode_dirty(dir);
 
-	set_page_dirty(page);
 	data->err = 0;
 	if (IS_DIRSYNC(dir)) {
 		data->err = lean_write_page(page, 1);
@@ -326,8 +336,8 @@ static int lean_add_link(struct dentry *de, struct inode *inode)
 	if (data.err == 1) {
 		struct page *page;
 		struct lean_dir_entry *new;
-		loff_t off = data.ctx.pos -
-			     data.preceding * sizeof(struct lean_dir_entry);
+		loff_t off = data.ctx.pos
+			     - data.preceding * sizeof(struct lean_dir_entry);
 
 		if ((off & LEAN_SEC_MASK) + data.entry_length > LEAN_SEC_MASK)
 			off = (off + LEAN_SEC_MASK) & LEAN_SEC_MASK;
@@ -347,7 +357,9 @@ static int lean_add_link(struct dentry *de, struct inode *inode)
 			   off);
 		data.ctx.pos = off;
 		data.preceding = 0;
-		new = page_address(page) + (off & PAGE_MASK);
+		lean_debug(inode->i_sb, "page = %32ph", page_address(page));
+		new = page_address(page) + (off & ~PAGE_MASK);
+		lean_debug(inode->i_sb, "new = %32ph", new);
 		new->type = LFT_NONE;
 		new->entry_length = data.entry_length;
 
