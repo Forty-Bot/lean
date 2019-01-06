@@ -5,6 +5,9 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/pagemap.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
+#include <linux/iversion.h>
+#endif
 
 /* Heavily influenced by fs/ext2/dir.c */
 static unsigned int lean_last_byte(struct inode *inode, unsigned long page_nr)
@@ -383,13 +386,11 @@ static int lean_create(struct inode *dir, struct dentry *dentry,
 	err = lean_add_link(dentry, inode);
 	if (err) {
 		inode_dec_link_count(inode);
-		unlock_new_inode(inode);
-		iput(inode);
+		lean_discard_new_inode(inode);
 		return err;
 	}
 
-	unlock_new_inode(inode);
-	d_instantiate(dentry, inode);
+	lean_instantiate_new(dentry, inode);
 	return 0;
 }
 

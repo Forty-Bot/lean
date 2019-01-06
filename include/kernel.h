@@ -7,16 +7,36 @@
 #include <linux/slab.h>
 #include <linux/version.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
-#define lean_write_page(page, sync) write_one_page(page, sync)
-#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
 #define lean_write_page(page, sync) write_one_page(page)
+#else
+#define lean_write_page(page, sync) write_one_page(page, sync)
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+#define lean_instantiate_new(dentry, inode) d_instantiate_new(dentry, inode)
+#else
+static inline void lean_instantiate_new(struct dentry *de, struct inode *inode)
+{
+	unlock_new_inode(inode);
+	d_instantiate(de, inode);
+}
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
 #define timespec timespec64
 #define lean_time lean_time64
 #define lean_timespec lean_timespec64
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
+#define lean_discard_new_inode(inode) discard_new_inode(inode)
+#else
+static inline void lean_discard_new_inode(struct inode *inode)
+{
+	unlock_new_inode(inode);
+	iput(inode);
+}
 #endif
 
 /*
