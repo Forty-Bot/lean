@@ -9,7 +9,7 @@
 #include <linux/random.h>
 #include <linux/writeback.h>
 
-static int lean_get_block(struct inode *inode, sector_t sec,
+int lean_get_block(struct inode *inode, sector_t sec,
 			  struct buffer_head *bh_result, int create)
 {
 	bool new = false;
@@ -87,7 +87,7 @@ static int lean_readpages(struct file *file, struct address_space *mapping,
 static int lean_writepage(struct page *page, struct writeback_control *wbc)
 {
 	struct inode *inode = page->mapping->host;
-	lean_debug(inode->i_sb, "Writing back page %lu for inode %lu",
+	lean_debug(inode->i_sb, "writing page %lu for inode %lu",
 		   page->index, inode->i_ino);
 	return nobh_writepage(page, lean_get_block, wbc);
 }
@@ -97,7 +97,7 @@ static int lean_writepages(struct address_space *mapping,
 {
 	struct inode *inode = mapping->host;
 	lean_debug(inode->i_sb,
-		   "Writing back %ld pages starting at %lld for inode %lu",
+		   "writing %ld pages starting at %lld for inode %lu",
 		   wbc->nr_to_write, wbc->range_start, inode->i_ino);
 	return mpage_writepages(mapping, wbc, lean_get_block);
 }
@@ -165,7 +165,7 @@ struct inode *lean_iget(struct super_block *s, uint64_t ino)
 	}
 
 	if (raw->extra_type != LXT_NONE) {
-		li->extra = lean_extra_get();
+		li->extra = lean_extra_alloc();
 		if (!li->extra) {
 			ret = -ENOMEM;
 			goto bh_bad_inode;

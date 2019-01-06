@@ -229,7 +229,7 @@ static void lean_free_callback(struct rcu_head *head)
 	struct lean_ino_info *li = LEAN_I(inode);
 
 	if (li->extra)
-		lean_extra_put(li->extra);
+		lean_extra_free(li->extra);
 	kmem_cache_free(lean_inode_cache, LEAN_I(inode));
 }
 
@@ -487,6 +487,7 @@ static int __init lean_init(void)
 		goto register_fail;
 
 	return 0;
+
 register_fail:
 	lean_destroy_extracache();
 cache_fail:

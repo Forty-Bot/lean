@@ -94,12 +94,12 @@ static inline struct lean_bitmap *LEAN_BITMAP(struct lean_sb_info *sbi,
 
 extern struct kmem_cache *lean_extra_cache;
 
-static inline struct lean_extra_info *lean_extra_get(void)
+static inline struct lean_extra_info *lean_extra_alloc(void)
 {
 	return kmem_cache_alloc(lean_extra_cache, GFP_KERNEL);
 }
 
-static inline void lean_extra_put(struct lean_extra_info *ex)
+static inline void lean_extra_free(struct lean_extra_info *ex)
 {
 	kmem_cache_free(lean_extra_cache, ex);
 }
