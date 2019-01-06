@@ -1,4 +1,4 @@
-SRCDIRS = src src/tools
+SRCDIRS = src tools
 CLEANDIRS := $(SRCDIRS:=/clean)
 
 all: $(SRCDIRS)

@@ -13,3 +13,4 @@ modules.order
 tags
 *.mod.c
 */.cache.mk
+tools/mkfs.lean
