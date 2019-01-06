@@ -113,12 +113,82 @@ int lean_set_page_dirty(struct page *page)
 	return __set_page_dirty_nobuffers(page);
 }
 
+/*
+ * _reduce_ the size of an inode to off
+ */
+static void lean_truncate(struct inode *inode, loff_t off)
+{
+	struct lean_ino_info *li = LEAN_I(inode);
+	uint64_t extent;
+	uint64_t sec = (off + LEAN_SEC_MASK) >> LEAN_SEC_SHIFT;
+	uint32_t size;
+	unsigned i = 0;
+
+	if (!(S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
+	    S_ISLNK(inode->i_mode)))
+		return;
+
+	/* Nothing to do */
+	if (i_size_read(inode) <= off)
+		return;
+
+	down_write(&li->alloc_lock);
+
+	/* Someone else truncated first */
+	if (i_size_read(inode) <= off) {
+		up_write(&li->alloc_lock);
+		return;
+	}
+
+	extent = li->extent_starts[i];
+	size = li->extent_sizes[i];
+	/* Loop until we get to the right extent (or run out) */
+	while (sec > size && i < li->extent_count) {
+		extent = li->extent_starts[i];
+		size = li->extent_sizes[i];
+		sec -= size;
+		i++;
+	}
+
+	if (size - sec)
+		lean_free_sectors(inode->i_sb, extent + sec + 1, size - sec);
+	for (; i < li->extent_count; i++)
+		lean_free_sectors(inode->i_sb, li->extent_starts[i],
+				  li->extent_sizes[i]);
+
+	mark_inode_dirty(inode);
+	up_write(&li->alloc_lock);
+	return;
+}
+
+static int lean_write_begin(struct file *file, struct address_space *mapping,
+			    loff_t pos, unsigned len, unsigned flags,
+			    struct page **pagep, void **fsdata)
+{
+	struct inode *inode = mapping->host;
+	int ret;
+
+	lean_debug(inode->i_sb,
+		   "Beginning write at %lld with length %u for inode %lu",
+		   pos, len, inode->i_ino);
+	ret = nobh_write_begin(mapping, pos, len, flags, pagep, fsdata,
+				   lean_get_block);
+
+	if (ret && pos + len > inode->i_size) {
+		truncate_pagecache(inode, inode->i_size);
+		lean_truncate(inode, inode->i_size);
+	}
+	return ret;
+}
+
 static const struct address_space_operations lean_aops = {
 	.readpage = lean_readpage,
 	.readpages = lean_readpages,
 	.writepage = lean_writepage,
 	.writepages = lean_writepages,
 	.set_page_dirty = lean_set_page_dirty,
+	.write_begin = lean_write_begin,
+	.write_end = nobh_write_end,
 };
 
 struct inode *lean_iget(struct super_block *s, uint64_t ino)
